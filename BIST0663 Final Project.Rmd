@@ -41,7 +41,7 @@ library(DataExplorer)
 
 ### Load Data
 ```{r}
-ALZH<-read.csv("C:/Users/24597/Documents/RUstatsLearning/alzheimers_disease_data.csv")
+ALZH<-read.csv("https://raw.githubusercontent.com/jasonh0509/StatsLearningFinal/refs/heads/main/alzheimers_disease_data.csv")
 ```
 
 ### Take a Look
