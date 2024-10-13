@@ -11,6 +11,11 @@ output: pdf_document
 install.packages(c("ggplot2","broom","gridExtra","dplyr","class","tidyverse","leaps","corrplot","RColorBrewer","glmnet","xtable","randomForest","pROC","devtools","UpSetR","naniar","report","rpart","rattle","rpart.plot"))
 ```
 
+```{r}
+#This is a test
+```
+
+
 ```{r load packages, include=FALSE}
 ##Here we load the packages needed and install a package that is not on CRAN
 library(ggplot2)
