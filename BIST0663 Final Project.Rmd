@@ -44,7 +44,7 @@ library(rpart.plot)
 library(DataExplorer)
 ```
 
-### Load Data
+### Load Datas
 ```{r}
 ALZH<-read.csv("https://raw.githubusercontent.com/jasonh0509/StatsLearningFinal/refs/heads/main/alzheimers_disease_data.csv")
 ```
