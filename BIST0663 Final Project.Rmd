@@ -1,0 +1,273 @@
+---
+title: "BISST0663_Final_Project"
+author: "Jueshen Hou  Zimeng Ren"
+date: "2024-10-09"
+output: pdf_document
+---
+
+
+```{r install package in case you do not have it, eval=FALSE, include=FALSE}
+##These packages are needed for later code chunks,if you do not have the following packages installed, please run this chunk to ensure all packages needed are installed.
+install.packages(c("ggplot2","broom","gridExtra","dplyr","class","tidyverse","leaps","corrplot","RColorBrewer","glmnet","xtable","randomForest","pROC","devtools","UpSetR","naniar","report","rpart","rattle","rpart.plot"))
+```
+
+```{r load packages, include=FALSE}
+##Here we load the packages needed and install a package that is not on CRAN
+library(ggplot2)
+library(broom)
+library(gridExtra)
+library(dplyr)
+library(class)
+library(tidyverse)
+library(gridExtra)
+library(leaps)
+library(corrplot)
+library(RColorBrewer)
+library(glmnet)
+library(xtable)
+library(randomForest)
+library(pROC)
+#library(smotefamily)
+library(devtools)
+devtools::install_github("dongyuanwu/RSBID")
+library(UpSetR)
+library(naniar)
+library(report)
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(DataExplorer)
+```
+
+### Load Data
+```{r}
+ALZH<-read.csv("C:/Users/24597/Documents/RUstatsLearning/alzheimers_disease_data.csv")
+```
+
+### Take a Look
+
+```{r}
+glimpse(ALZH)
+```
+```{r}
+ALZH_noID<-ALZH[,-1]
+```
+
+
+```{r}
+na_plot_ALZH<-vis_miss(ALZH_noID);na_plot_ALZH
+
+```
+
+```{r}
+colSums(is.na(ALZH_noID))
+```
+
+```{r changing data types}
+ALZH_noID$Diagnosis<-as.factor(ALZH_noID$Diagnosis)
+ALZH_noID <- ALZH_noID %>%
+  mutate(across(c(Gender, Ethnicity,EducationLevel,Smoking,FamilyHistoryAlzheimers,CardiovascularDisease,Diabetes,Depression,HeadInjury,Hypertension,MemoryComplaints,BehavioralProblems,Confusion,Disorientation,PersonalityChanges,DifficultyCompletingTasks,Forgetfulness), as.factor))
+```
+
+```{r}
+alzh_classes<-ggplot(data = ALZH_noID, mapping = aes(x=Diagnosis,fill=Diagnosis))+
+  geom_bar()+
+  xlab("Diagnosis Status")+
+  ggtitle("Figure x.x Classes of Alzheimer's Disease")
+  
+alzh_classes
+```
+```{r}
+ALZH_noID_balanced<-SMOTE_NC(ALZH_noID,"Diagnosis",perc_maj = 60,k=5)
+```
+
+```{r}
+ggplot(data = ALZH_noID_balanced, mapping = aes(x=Diagnosis,fill=Diagnosis))+
+  geom_bar()+
+  xlab("Diagnosis Status")+
+  ggtitle("Figure x.x Classes of Alzheimer's Disease")
+  
+```
+
+
+```{r}
+glimpse(ALZH_noID)
+```
+
+```{r}
+ALZH_IntOnly<-ALZH_noID_balanced[,sapply(ALZH_noID,is.integer)]
+ALZH_double<-ALZH_noID_balanced[,sapply(ALZH_noID,is.double)]
+ALZH_NumOnly<-cbind(ALZH_IntOnly,ALZH_double)
+ALZH_fct<-ALZH_noID_balanced[,sapply(ALZH_noID,is.factor)]
+
+```
+
+```{r}
+glimpse(ALZH_NumOnly)
+```
+
+```{r}
+plot_qq(ALZH_NumOnly)
+```
+
+
+
+```{r}
+plot_intro(ALZH_noID_balanced)
+```
+
+
+
+```{r}
+plot_bar(ALZH_fct[,-18],ggtheme = theme_classic())
+```
+
+
+```{r positive only set}
+alzh_pos<-subset(ALZH_noID_balanced,Diagnosis==1)
+
+alzh_gender<-alzh_pos%>%
+  group_by(Gender)%>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = Gender, y = n,fill=Gender))+
+  geom_col()+
+  labs(y="Count of Alzheimer's ")
+alzh_gender+ggtitle("Figure x.x Alzheimer's  Across Gender")
+
+alzh_diab<-alzh_pos%>%
+  group_by(Diabetes)%>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = Diabetes, y = n,fill=Diabetes))+
+  geom_col()+
+  labs(y="Count of Alzheimer's ")
+alzh_diab+ggtitle("Figure x.x Alzheimer's in Diabetics")
+
+```
+
+```{r}
+alzh_smoke<-alzh_pos%>%
+  group_by(Smoking)%>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = Smoking, y = n,fill=Smoking))+
+  geom_col()+
+  labs(y="Count of Alzheimer's ")
+alzh_smoke+ggtitle("Figure x.x Alzheimer's in Cigarette Users")
+
+```
+
+```{r}
+alzh_edu<-alzh_pos%>%
+  group_by(EducationLevel)%>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = EducationLevel, y = n,fill=EducationLevel))+
+  geom_col()+
+  labs(y="Count of Alzheimer's ")
+alzh_edu+ggtitle("Figure x.x Alzheimer's and Education")
+
+```
+
+```{r}
+alzh_ethnicity<-alzh_pos%>%
+  group_by(Ethnicity)%>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = Ethnicity, y = n,fill=Ethnicity))+
+  geom_col()+
+  labs(y="Count of Alzheimer's ")
+alzh_edu+ggtitle("Figure x.x Alzheimer's and Ethnicity")
+
+```
+
+```{r}
+age_alz<-ggplot(data=ALZH_noID,aes(x=Age,y=CholesterolTotal,color=Diagnosis))+geom_point()
+age_alz+ggtitle("Figure 2.9 Age vs BMI Respect to Alzh")
+
+```
+
+```{r}
+plot_correlation(ALZH_NumOnly)
+```
+
+
+```{r}
+ALZH_noID_balanced<-
+  ALZH_noID_balanced%>%
+  dplyr::select(-CholesterolTotal,-CholesterolHDL,-CholesterolLDL,-CholesterolTriglycerides)
+```
+
+
+### KNN
+```{r 10 fold CV determine best k }
+set.seed(114514)
+n<-nrow(ALZH_NumOnly)
+nk<-30
+storage<-data.frame("K"=rep(NA,nk),
+                    "Sensitivity" = rep(NA,nk),
+                    "Specificity" = rep(NA,nk),
+                    "GeoMean" = rep(NA,nk))
+alzh_knn<-cbind(ALZH_noID_balanced$Diagnosis,ALZH_NumOnly)
+alzh_knn$Diagnosis<-alzh_knn$`ALZH_noID_balanced$Diagnosis`
+alzh_knn<-alzh_knn[,-1]
+
+#Set a seed for sampling and create a pool and set fold for K fold CV
+set.seed(114514)
+pool<-rep(1:10,ceiling(n/10))
+
+fold<-sample(pool,n,replace = FALSE)
+
+#Outer loop for increment k 
+for(k in 1:nk){
+  storage$K[k]<-k
+  
+  storage_inner<-data.frame("YHat" = rep(NA,n))
+  #Inner loop for 10 fold CV
+  for(i in 1:10){
+    #Find data in each fold
+    infold<-which(fold == i)
+    
+    #Create training and testing sets
+    Train_alzh<-alzh_knn[-infold,]
+    Test_alzh<-alzh_knn[infold,]
+   #(set.seed(114514))
+    #Run kNN
+    k_preds<-knn(Train_alzh[,-16],Test_alzh[,-16],k=k,cl=Train_alzh$Diagnosis)
+    
+    #store predicted result from each fold to storage_inner and obtain predictions to     the full data set 
+    storage_inner$YHat[infold]<-as.numeric(as.character(k_preds))
+  }
+    #Find rows with positive and negative result
+    true1K<-which(alzh_knn$Diagnosis == 1)
+    true0K<-which(alzh_knn$Diagnosis == 0)
+    
+    #Compute the amount of rows corresponding to each result
+    ntrue1K<-length(true1K)
+    ntrue0K<-length(true0K)
+    #Compute sensitivity and specificity, as well as GeoMetric Mean for determining the best value for k
+    sensitivity<-sum(storage_inner$YHat[true1K] == 1)/ntrue1K
+    storage$Sensitivity[k]<-sensitivity
+    specificity<-sum(storage_inner$YHat[true0K] == 0)/ntrue0K
+    storage$Specificity[k]<-specificity
+    storage$GeoMean[k]<-sqrt(sensitivity*specificity)
+    
+    #if(k==8){
+     # YHatOut <- storage_inner$YHat
+    #}
+   
+}
+
+```
+
+```{r}
+knnActualPlot_alzh<-ggplot(storage,aes(K,GeoMean))+
+  geom_line()+
+  labs(caption = paste("Geometric Mean, ReD Line at K=", which.max(storage$GeoMean)),title = "Figure 3.2.2 GeoMean Graph of kNN with Best k Shown
+  (10 Fold Cross Validation)",y = " ")+
+  geom_vline(xintercept = which.max(storage$GeoMean),lty = 2,col="red")
+#Show Plot
+knnActualPlot_alzh
+```
+
+```{r}
+knitr::kable(table("Prediction" = storage_inner$YHat,"Actual" = alzh_knn$Diagnosis),caption = "Confusion Matrix of Predicting Stroke (10-fold Cross Validation with k=1)")
+```
+
+
