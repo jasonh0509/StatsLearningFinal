@@ -42,6 +42,7 @@ library(rpart)
 library(rattle)
 library(rpart.plot)
 library(DataExplorer)
+library(RSBID)
 ```
 
 ### Load Datas
@@ -199,6 +200,10 @@ ALZH_noID_balanced<-
   dplyr::select(-CholesterolTotal,-CholesterolHDL,-CholesterolLDL,-CholesterolTriglycerides)
 ```
 
+```{r}
+alzh_secondKNN<-alzh_knn%>%
+  dplyr::select(Diagnosis,Age,BMI,AlcoholConsumption,DietQuality,SleepQuality)
+```
 
 ### KNN
 ```{r 10 fold CV determine best k }
@@ -274,5 +279,8 @@ knnActualPlot_alzh
 ```{r}
 knitr::kable(table("Prediction" = storage_inner$YHat,"Actual" = alzh_knn$Diagnosis),caption = "Confusion Matrix of Predicting Stroke (10-fold Cross Validation with k=1)")
 ```
+
+
+
 
 
