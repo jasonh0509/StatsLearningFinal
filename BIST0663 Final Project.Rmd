@@ -42,6 +42,7 @@ library(rpart)
 library(rattle)
 library(rpart.plot)
 library(DataExplorer)
+library(RSBID)
 ```
 
 ### Load Datas
@@ -275,4 +276,25 @@ knnActualPlot_alzh
 knitr::kable(table("Prediction" = storage_inner$YHat,"Actual" = alzh_knn$Diagnosis),caption = "Confusion Matrix of Predicting Stroke (10-fold Cross Validation with k=1)")
 ```
 
+###logistic
 
+```{r}
+n <-nrow(ALZH)
+train <-ALZH[1:1075,-c(1,35)]
+test <- ALZH[1075:2149,-33]
+test_y <-ALZH[1075:2149,33]
+```
+
+```{r}
+ALZH_logistic <-glm(Diagnosis~.,data=train,family = binomial())
+summary(ALZH_logistic)
+```
+
+```{r}
+
+pred_test<-predict(ALZH_logistic,type='response',data=test)
+glm.pred <- rep(0, 1075)
+glm.pred[pred_test > .5] = 1
+table(glm.pred, test_y)
+(528+110)/1075
+```
