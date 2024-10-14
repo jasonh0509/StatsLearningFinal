@@ -308,8 +308,17 @@ table(glm.pred, test_y)
 ```{r}
 library(glmnet)
 grid <- 10^seq(10,-2, length = 100)
- lasso.mod <-glmnet(train_x, train_y, alpha = 1,lambda = grid)
+lasso.mod <-glmnet(train_x, train_y, alpha = 1,lambda = grid)
 plot(lasso.mod)
-
+summary(lasso.mod)
+```
+```{r}
+ALZH_leanning<-ALZH_noID[,-34]
+bestsubset <- regsubsets(Diagnosis~., data = ALZH_leanning)
+bestsubsum<-summary(bestsubset)
+bestsubsum
+which.min(bestsubsum$cp)
+which.min(bestsubsum$bic)
+which.min(bestsubsum$adjr2)
 ```
 
