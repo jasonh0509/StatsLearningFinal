@@ -283,12 +283,15 @@ knitr::kable(table("Prediction" = storage_inner$YHat,"Actual" = alzh_knn$Diagnos
 ###logistic
 
 ```{r}
+ALZH_noID<-ALZH_noID[-34]
 n <-nrow(ALZH)
 train <-ALZH[1:1075,-c(1,35)]
 train_x <-ALZH[1:1075,-c(1,34,35)]
 train_y <-ALZH[1:1075,34]
 test <- ALZH[1075:2149,-c(1,34,35)]
 test_y <-ALZH[1075:2149,-c(1,35)]
+x <-model.matrix(Diagnosis~.,data=ALZH_noID)[,-33]
+y <- ALZH_noID$Diagnosis
 ```
 
 ```{r}
@@ -297,7 +300,6 @@ summary(ALZH_logistic)
 ```
 
 ```{r}
-
 pred_test<-predict(ALZH_logistic,type='response',data=test)
 glm.pred <- rep(0, 1075)
 glm.pred[pred_test > .5] = 1
@@ -311,6 +313,8 @@ grid <- 10^seq(10,-2, length = 100)
 lasso.mod <-glmnet(train_x, train_y, alpha = 1,lambda = grid)
 plot(lasso.mod)
 summary(lasso.mod)
+cv.out <-cv.glmnet(x, y, alpha = 1,family="binomial")
+plot(cv.out)
 ```
 ```{r}
 ALZH_leanning<-ALZH_noID[,-34]
