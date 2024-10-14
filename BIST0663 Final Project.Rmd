@@ -191,9 +191,7 @@ plot_intro(ALZH_noID_balanced)
 
 
 
-```{r}
-plot_bar(ALZH_fct[,-18],ggtheme = theme_classic())
-```
+
 
 
 ```{r positive only set}
@@ -205,7 +203,7 @@ alzh_gender<-alzh_pos%>%
   ggplot(aes(x = Gender, y = n,fill=Gender))+
   geom_col()+
   labs(y="Count of Alzheimer's ")
-alzh_gender+ggtitle("Figure x.x Alzheimer's  Across Gender")
+alzh_gender+ggtitle("Alzheimer's  Across Gender")
 
 alzh_diab<-alzh_pos%>%
   group_by(Diabetes)%>%
@@ -213,7 +211,7 @@ alzh_diab<-alzh_pos%>%
   ggplot(aes(x = Diabetes, y = n,fill=Diabetes))+
   geom_col()+
   labs(y="Count of Alzheimer's ")
-alzh_diab+ggtitle("Figure x.x Alzheimer's in Diabetics")
+alzh_diab+ggtitle("Alzheimer's in Diabetics")
 
 ```
 
@@ -235,7 +233,7 @@ alzh_edu<-alzh_pos%>%
   ggplot(aes(x = EducationLevel, y = n,fill=EducationLevel))+
   geom_col()+
   labs(y="Count of Alzheimer's ")
-alzh_edu+ggtitle("Figure x.x Alzheimer's and Education")
+alzh_edu+ggtitle("Alzheimer's Disease and Education")
 
 ```
 
@@ -246,7 +244,7 @@ alzh_ethnicity<-alzh_pos%>%
   ggplot(aes(x = Ethnicity, y = n,fill=Ethnicity))+
   geom_col()+
   labs(y="Count of Alzheimer's ")
-alzh_edu+ggtitle("Figure x.x Alzheimer's and Ethnicity")
+alzh_edu+ggtitle("Alzheimer's and Ethnicity")
 
 ```
 
