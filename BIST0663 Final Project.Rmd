@@ -85,10 +85,10 @@ alzh_classes
 ```
 
 ```{r}
-ALZH_noID_balanced<-SMOTE_NC(ALZH_noID,"Diagnosis",perc_maj = 80,k=5)
+#ALZH_noID_balanced<-SMOTE_NC(ALZH_noID,"Diagnosis",perc_maj = 80,k=5)
 ```
 ```{r}
-ggplot(data = ALZH_noID_balanced, mapping = aes(x=Diagnosis,fill=Diagnosis))+
+ggplot(data = ALZH_noID, mapping = aes(x=Diagnosis,fill=Diagnosis))+
   geom_bar()+
   xlab("Diagnosis Status")+
   ggtitle("Classes of Alzheimer's Disease After SMOTE")
@@ -99,7 +99,7 @@ ggplot(data = ALZH_noID_balanced, mapping = aes(x=Diagnosis,fill=Diagnosis))+
 
 
 ```{r}
-ALZH_for_explore<-ALZH_noID_balanced
+ALZH_for_explore<-ALZH_noID%>%dplyr::select(-DoctorInCharge)
 n <-nrow(ALZH_for_explore)
 pool<-c(1:2500)
 set.seed(114514)
@@ -126,7 +126,8 @@ ALZH_logistic <-glm(Diagnosis~.,data=train,family = binomial())
 summary(ALZH_logistic)
 ```
 
-```{r}
+```{r eval=FALSE, include=FALSE}
+###subject to fix
 pred_test<-predict(ALZH_logistic,type='response',data=test)
 glm.pred <- rep(0, 1075)
 glm.pred[pred_test > .5] = 1
@@ -136,7 +137,9 @@ table(glm.pred, test_y)
 
 
 ### lasso
+
 ```{r}
+##subject to fix
 library(glmnet)
 grid <- 10^seq(10,-2, length = 100)
 lasso.mod <-glmnet(train_x, train_y, alpha = 1,lambda = grid)
@@ -147,7 +150,7 @@ plot(cv.out)
 ```
 
 ```{r}
-ALZH_leanning<-ALZH_noID_balanced
+ALZH_leanning<-ALZH_noID%>%dplyr::select(-DoctorInCharge)
 bestsubset <- regsubsets(Diagnosis~., data = ALZH_leanning)
 bestsubsum<-summary(bestsubset)
 bestsubsum
@@ -168,10 +171,10 @@ glimpse(ALZH_noID)
 ```
 
 ```{r}
-ALZH_IntOnly<-ALZH_noID_balanced[,sapply(ALZH_noID,is.integer)]
-ALZH_double<-ALZH_noID_balanced[,sapply(ALZH_noID,is.double)]
+ALZH_IntOnly<-ALZH_noID[,sapply(ALZH_noID,is.integer)]
+ALZH_double<-ALZH_noID[,sapply(ALZH_noID,is.double)]
 ALZH_NumOnly<-cbind(ALZH_IntOnly,ALZH_double)
-ALZH_fct<-ALZH_noID_balanced[,sapply(ALZH_noID,is.factor)]
+ALZH_fct<-ALZH_noID[,sapply(ALZH_noID,is.factor)]
 
 ```
 
@@ -179,14 +182,12 @@ ALZH_fct<-ALZH_noID_balanced[,sapply(ALZH_noID,is.factor)]
 glimpse(ALZH_NumOnly)
 ```
 
-```{r}
-plot_qq(ALZH_NumOnly)
-```
+
 
 
 
 ```{r}
-plot_intro(ALZH_noID_balanced)
+plot_intro(ALZH_noID)
 ```
 
 
@@ -195,7 +196,7 @@ plot_intro(ALZH_noID_balanced)
 
 
 ```{r positive only set}
-alzh_pos<-subset(ALZH_noID_balanced,Diagnosis==1)
+alzh_pos<-subset(ALZH_noID,Diagnosis==1)
 
 alzh_gender<-alzh_pos%>%
   group_by(Gender)%>%
@@ -260,8 +261,8 @@ plot_correlation(ALZH_NumOnly)
 
 
 ```{r}
-ALZH_noID_balanced<-
-  ALZH_noID_balanced%>%
+ALZH_noID_noCholest<-
+  ALZH_noID%>%
   dplyr::select(-CholesterolTotal,-CholesterolHDL,-CholesterolLDL,-CholesterolTriglycerides)
 ```
 
@@ -280,8 +281,8 @@ storage<-data.frame("K"=rep(NA,nk),
                     "Sensitivity" = rep(NA,nk),
                     "Specificity" = rep(NA,nk),
                     "GeoMean" = rep(NA,nk))
-alzh_knn<-cbind(ALZH_noID_balanced$Diagnosis,ALZH_NumOnly)
-alzh_knn$Diagnosis<-alzh_knn$`ALZH_noID_balanced$Diagnosis`
+alzh_knn<-cbind(ALZH_noID$Diagnosis,ALZH_NumOnly)
+alzh_knn<-alzh_knn%>%mutate(Diagnosis=`ALZH_noID$Diagnosis`)
 alzh_knn<-alzh_knn[,-1]
 
 #Set a seed for sampling and create a pool and set fold for K fold CV
