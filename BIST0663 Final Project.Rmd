@@ -85,14 +85,14 @@ alzh_classes
 ```
 
 ```{r}
-ALZH_noID_balanced<-SMOTE_NC(ALZH_noID,"Diagnosis",perc_maj = 60,k=5)
+ALZH_noID_balanced<-SMOTE_NC(ALZH_noID,"Diagnosis",perc_maj = 80,k=5)
 ```
 
 ```{r}
 ggplot(data = ALZH_noID_balanced, mapping = aes(x=Diagnosis,fill=Diagnosis))+
   geom_bar()+
   xlab("Diagnosis Status")+
-  ggtitle("Figure x.x Classes of Alzheimer's Disease")
+  ggtitle("Classes of Alzheimer's Disease After SMOTE")
   
 ```
 
@@ -327,6 +327,7 @@ summary(lasso.mod)
 cv.out <-cv.glmnet(x, y, alpha = 1,family="binomial")
 plot(cv.out)
 ```
+
 ```{r}
 ALZH_leanning<-ALZH_noID[,-34]
 bestsubset <- regsubsets(Diagnosis~., data = ALZH_leanning)
