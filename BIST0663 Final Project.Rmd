@@ -5,6 +5,9 @@ date: "2024-10-09"
 output: pdf_document
 ---
 
+```{r,include=FALSE}
+options("install.lock"=FALSE)
+```
 
 ```{r install package in case you do not have it, eval=FALSE, include=FALSE}
 ##These packages are needed for later code chunks,if you do not have the following packages installed, please run this chunk to ensure all packages needed are installed.
