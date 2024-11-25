@@ -5,7 +5,8 @@ date: "2024-10-09"
 output: pdf_document
 ---
 
-```{r,include=FALSE}
+```{r,eval=FALSE}
+##This chunk is only needed when running on Jason's laptop.
 options("install.lock"=FALSE)
 ```
 
@@ -34,10 +35,10 @@ library(RColorBrewer)
 library(glmnet)
 library(xtable)
 library(randomForest)
+library(tree)
 library(pROC)
 #library(smotefamily)
 library(devtools)
-devtools::install_github("dongyuanwu/RSBID")
 library(UpSetR)
 library(naniar)
 library(report)
@@ -45,7 +46,8 @@ library(rpart)
 library(rattle)
 library(rpart.plot)
 library(DataExplorer)
-library(RSBID)
+library(BART)
+library(gbm)
 ```
 
 ### Load Datas
