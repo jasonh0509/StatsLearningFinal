@@ -5,14 +5,16 @@ date: "2024-10-09"
 output: pdf_document
 ---
 
-```{r,eval=FALSE}
-##This chunk is only needed when running on Jason's laptop.
+```{r,eval=TRUE}
+##This chunk is only needed when running on Jason's laptop.If it is on Jason's device change eval=TRUE
 options("install.lock"=FALSE)
 ```
 
 ```{r install package in case you do not have it, eval=FALSE, include=FALSE}
 ##These packages are needed for later code chunks,if you do not have the following packages installed, please run this chunk to ensure all packages needed are installed.
-install.packages(c("ggplot2","broom","gridExtra","dplyr","class","tidyverse","leaps","corrplot","RColorBrewer","glmnet","xtable","randomForest","pROC","devtools","UpSetR","naniar","report","rpart","rattle","rpart.plot"))
+install.packages(c("ggplot2","broom","gridExtra","class","tidyverse","leaps","corrplot","RColorBrewer","glmnet","xtable","randomForest","pROC","devtools","UpSetR","naniar","report","rpart","rattle","rpart.plot"))
+install.packages("dplyr")
+
 ```
 
 ```{r}
@@ -89,9 +91,7 @@ alzh_classes<-ggplot(data = ALZH_noID, mapping = aes(x=Diagnosis,fill=Diagnosis)
 alzh_classes
 ```
 
-```{r}
-#ALZH_noID_balanced<-SMOTE_NC(ALZH_noID,"Diagnosis",perc_maj = 80,k=5)
-```
+
 ```{r}
 ggplot(data = ALZH_noID, mapping = aes(x=Diagnosis,fill=Diagnosis))+
   geom_bar()+
@@ -100,15 +100,15 @@ ggplot(data = ALZH_noID, mapping = aes(x=Diagnosis,fill=Diagnosis))+
   
 ```
 
-###logistic
+### logistic
 
 
 ```{r}
 ALZH_for_explore<-ALZH_noID%>%dplyr::select(-DoctorInCharge)
-n <-nrow(ALZH_for_explore)
-pool<-c(1:2500)
+n <-nrow(ALZH_for_explore);n
+
 set.seed(114514)
-draw<-sample(pool,n/2,replace = FALSE)
+draw<-sample(1:n,size = 1934)
 
 train <-ALZH_for_explore[draw,]
 train_x<-train%>%dplyr::select(-Diagnosis)
@@ -133,11 +133,10 @@ summary(ALZH_logistic)
 
 ```{r eval=FALSE, include=FALSE}
 ###subject to fix
-pred_test<-predict(ALZH_logistic,type='response',data=test)
-glm.pred <- rep(0, 1075)
-glm.pred[pred_test > .5] = 1
+pred_test<-predict(ALZH_logistic,type='response',newdata = test_x)
+glm.pred <- ifelse(pred_test > 0.5, 1, 0)
 table(glm.pred, test_y)
-(528+110)/1075
+
 ```
 
 
@@ -354,3 +353,72 @@ knitr::kable(table("Prediction" = storage_inner$YHat,"Actual" = alzh_knn$Diagnos
 
 
 
+### GBM (does not produce anything)
+
+```{r}
+#ALZH.bart <- ALZH_noID%>%select(-DoctorInCharge)
+ALZH.bart <- ALZH_noID %>% select(where(is.numeric),Diagnosis)
+ALZH.bart$Diagnosis<-as.numeric(as.character(ALZH.bart$Diagnosis))
+```
+
+```{r}
+set.seed(114514)
+x_bart <- ALZH.bart %>% select(-Diagnosis)
+y_bart <- ALZH.bart$Diagnosis
+x_train_bart <- x_bart[draw, ]
+y_train_bart <- as.numeric(as.character(y_bart[draw]))
+
+x_test <- x_bart[-draw, ]
+y_test <- y_bart[-draw]
+bart_alzh <- gbart(
+  x.train = x_train_bart,
+  y.train = y_train_bart,
+  x.test = x_test,
+  type = "pbart",
+  k = 1,
+  ndpost = 2000
+)
+
+pred_bart <- bart_alzh$yhat.test.mean
+pred_bart_class <- ifelse(pred_bart > 0.5, 1, 0)
+accuracy <- mean(pred_bart_class == y_test)
+accuracy
+```
+
+
+### gbm
+
+```{r}
+set.seed(12345)
+ALZH.gbm<-ALZH_noID%>%select(-DoctorInCharge)%>%mutate(Diagnosis=as.numeric(as.character(Diagnosis)))
+boosting.try <- gbm(Diagnosis ~ ., data = ALZH.gbm[draw,], distribution = "bernoulli", n.trees = 5000, interaction.depth = 4, shrinkage = 0.01)
+
+```
+
+```{r}
+yhat.gbm<-predict(boosting.try,newdata = ALZH.gbm[-draw,],n.trees = 5000,interaction.depth = 4,shrinkage = 0.01,type = "response")
+pred_gbm_class <- ifelse(yhat.gbm > 0.5, 1, 0)
+table(pred_gbm_class,ALZH.gbm[-draw,]$Diagnosis)
+```
+
+```{r}
+set.seed(12345)
+lambda_val <- seq(0.01, 0.1, by = 0.01)
+result_container <- data.frame(Lambda = lambda_val, Recall = rep(0, length(lambda_val)))
+for (i in 1:length(lambda_val)) {
+  #cat("Iteration: ", i, "\n")
+  Boosting_alzh <- gbm(Diagnosis ~., data = ALZH.gbm[draw,], distribution = "bernoulli", n.trees = 2000, interaction.depth = 4, shrinkage = lambda_val[i])
+  result_container$Recall[i] <-sum(predict(Boosting_alzh, newdata = ALZH.gbm[-draw,], n.trees = 2000, type = "response") > 0.5 & ALZH.gbm[-draw,]$Diagnosis == 1) / sum(ALZH.gbm[-draw,]$Diagnosis == 1)
+  #yhat.boost.inLoop <- predict(Boosting_Hitter, newdata = Hitters.Test, n.trees = 1000)
+  #result_container$Test.MSE[i] <- mean((yhat.boost.inLoop - Hitters.Test$Salary)^2)
+}
+plot(x=result_container$Lambda, y=result_container$Recall,xlab = "Lambda", ylab = "Recall", type = "l")
+```
+
+```{r}
+set.seed(12345)
+Boosting_alzh.final<-gbm(Diagnosis~.,data=ALZH.gbm[draw,],distribution="bernoulli",n.trees=2000,interaction.depth=4,shrinkage=0.01)
+yhat.boost.final<-predict(Boosting_alzh.final,newdata = ALZH.gbm[-draw,],n.trees = 2000,interaction.depth = 4,shrinkage = 0.01,type = "response")
+pred_gbm_class_final <- ifelse(yhat.boost.final > 0.5, 1, 0)
+table(pred_gbm_class_final,ALZH.gbm[-draw,]$Diagnosis)
+```
