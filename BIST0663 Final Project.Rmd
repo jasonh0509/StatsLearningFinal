@@ -13,8 +13,7 @@ options("install.lock"=FALSE)
 ```{r install package in case you do not have it, eval=FALSE, include=FALSE}
 ##These packages are needed for later code chunks,if you do not have the following packages installed, please run this chunk to ensure all packages needed are installed.
 install.packages(c("ggplot2","broom","gridExtra","class","tidyverse","leaps","corrplot","RColorBrewer","glmnet","xtable","randomForest","pROC","devtools","UpSetR","naniar","report","rpart","rattle","rpart.plot"))
-install.packages("dplyr")
-
+install.packages("randomForest")
 ```
 
 ```{r}
@@ -27,7 +26,6 @@ install.packages("dplyr")
 library(ggplot2)
 library(broom)
 library(gridExtra)
-library(dplyr)
 library(class)
 library(tidyverse)
 library(gridExtra)
@@ -62,6 +60,7 @@ ALZH<-read.csv("https://raw.githubusercontent.com/jasonh0509/StatsLearningFinal/
 ```{r}
 glimpse(ALZH)
 ```
+
 ```{r}
 ALZH_noID<-ALZH[,-1]
 ```
@@ -118,10 +117,7 @@ test <- ALZH_for_explore[-draw,]
 test_x<-test%>%dplyr::select(-Diagnosis)
 test_y <-test$Diagnosis
 
-#train_x <-ALZH_for_explore[1:1075,-c(1,34,35)]
-#train_y <-ALZH_for_explore[1:1075,34]
-#test <- ALZH_for_explore[1075:2149,-c(1,34,35)]
-#test_y <-ALZH_for_explore[1075:2149,-c(1,35)]
+
 x <-model.matrix(Diagnosis~.,data=ALZH_for_explore)
 y <- ALZH_noID$Diagnosis
 ```
@@ -133,10 +129,9 @@ summary(ALZH_logistic)
 
 ```{r eval=FALSE, include=FALSE}
 ###subject to fix
-pred_test<-predict(ALZH_logistic,type='response',newdata = test_x)
+pred_test<-predict(ALZH_logistic,type='response',newdata = test)
 glm.pred <- ifelse(pred_test > 0.5, 1, 0)
 table(glm.pred, test_y)
-
 ```
 
 
@@ -151,7 +146,23 @@ plot(lasso.mod)
 summary(lasso.mod)
 cv.out <-cv.glmnet(x, y, alpha = 1,family="binomial")
 plot(cv.out)
+best_lambda <- cv.out$lambda.min;best_lambda
 ```
+
+
+```{r}
+train_y<-as.matrix(train_y)
+lasso.final<-glmnet(train_x,train_y,alpha = 1,lambda = best_lambda)
+lasso.pred <- predict(lasso.final, s = best_lambda, newx = as.matrix(test_x))
+lasso.pred.class<-ifelse(lasso.pred > 0.5,1,0)
+table(prediction=lasso.pred.class,actual=test_y)
+```
+
+```{r}
+Recall.lasso<-sum(lasso.pred.class == 1 & test_y == 1)/sum(test_y == 1);Recall.lasso
+```
+
+Lasso only reaches 0.03 Recall.
 
 ```{r}
 ALZH_leanning<-ALZH_noID%>%dplyr::select(-DoctorInCharge)
@@ -165,6 +176,9 @@ which.min(bestsubsum$adjr2)
 
 ```{r}
 knitr::kable(coef(bestsubset,8))
+bestSubset_vars <- names(coef(bestsubset, 8))[-1]
+bestSubset_vars
+bestSubset_STR<-paste(bestSubset_vars,collapse = ",")
 ```
 
 
@@ -271,80 +285,36 @@ ALZH_noID_noCholest<-
 ```
 
 ```{r}
-alzh_secondKNN<-alzh_knn%>%
-  dplyr::select(Diagnosis,Age,BMI,AlcoholConsumption,DietQuality,SleepQuality)
+alzh_secondKNN<-ALZH_noID%>%
+dplyr::select(Diagnosis,Age,BMI,AlcoholConsumption,DietQuality,SleepQuality,ADL)
+#dplyr::select()
 ```
 
 ### KNN
 
-```{r 10 fold CV determine best k }
-set.seed(114514)
-n<-nrow(ALZH_NumOnly)
-nk<-30
-storage<-data.frame("K"=rep(NA,nk),
-                    "Sensitivity" = rep(NA,nk),
-                    "Specificity" = rep(NA,nk),
-                    "GeoMean" = rep(NA,nk))
-alzh_knn<-cbind(ALZH_noID$Diagnosis,ALZH_NumOnly)
-alzh_knn<-alzh_knn%>%mutate(Diagnosis=`ALZH_noID$Diagnosis`)
-alzh_knn<-alzh_knn[,-1]
-
-#Set a seed for sampling and create a pool and set fold for K fold CV
-set.seed(114514)
-pool<-rep(1:10,ceiling(n/10))
-
-fold<-sample(pool,n,replace = FALSE)
-
-#Outer loop for increment k 
-for(k in 1:nk){
-  storage$K[k]<-k
-  
-  storage_inner<-data.frame("YHat" = rep(NA,n))
-  #Inner loop for 10 fold CV
-  for(i in 1:10){
-    #Find data in each fold
-    infold<-which(fold == i)
-    
-    #Create training and testing sets
-    Train_alzh<-alzh_knn[-infold,]
-    Test_alzh<-alzh_knn[infold,]
-   #(set.seed(114514))
-    #Run kNN
-    k_preds<-knn(Train_alzh[,-16],Test_alzh[,-16],k=k,cl=Train_alzh$Diagnosis)
-    
-    #store predicted result from each fold to storage_inner and obtain predictions to     the full data set 
-    storage_inner$YHat[infold]<-as.numeric(as.character(k_preds))
-  }
-    #Find rows with positive and negative result
-    true1K<-which(alzh_knn$Diagnosis == 1)
-    true0K<-which(alzh_knn$Diagnosis == 0)
-    
-    #Compute the amount of rows corresponding to each result
-    ntrue1K<-length(true1K)
-    ntrue0K<-length(true0K)
-    #Compute sensitivity and specificity, as well as GeoMetric Mean for determining the best value for k
-    sensitivity<-sum(storage_inner$YHat[true1K] == 1)/ntrue1K
-    storage$Sensitivity[k]<-sensitivity
-    specificity<-sum(storage_inner$YHat[true0K] == 0)/ntrue0K
-    storage$Specificity[k]<-specificity
-    storage$GeoMean[k]<-sqrt(sensitivity*specificity)
-    
-    #if(k==8){
-     # YHatOut <- storage_inner$YHat
-    #}
-   
+```{r}
+set.seed(12345)
+k_list<-seq(1,20,by=1)
+Perf.Metric.knn<-data.frame(k=k_list,Recall=rep(0,length(k_list)),Precision=rep(0,length(k_list)),F1_Score=rep(0,length(k_list)),
+Accuracy=rep(0,length(k_list)))
+for (k in k_list){
+  alzh_knn<-knn(train = alzh_secondKNN[draw,]%>%select(-Diagnosis),
+  test = alzh_secondKNN[-draw,]%>%select(-Diagnosis),cl = alzh_secondKNN[draw,]$Diagnosis,k=k)
+  Perf.Metric.knn[k,2]<-sum(alzh_knn == 1 & test_y == 1)/sum(test_y == 1)
+  Perf.Metric.knn[k,3]<-sum(alzh_knn == 1 & test_y == 1)/sum(alzh_knn == 1)
+  Perf.Metric.knn[k,4]<-2*Perf.Metric.knn[k,2]*Perf.Metric.knn[k,3]/(Perf.Metric.knn[k,2]+Perf.Metric.knn[k,3])
+  Perf.Metric.knn[k,5]<-sum(alzh_knn == test_y)/length(test_y)
 }
 
+Perf.Metric.knn$k[which.max(Perf.Metric.knn$Recall)]
+Perf.Metric.knn$Recall[which.max(Perf.Metric.knn$Recall)]
+plot(Perf.Metric.knn$k,Perf.Metric.knn$F1_Score,type="l",xlab="k",ylab="Recall")
+Perf.Metric.knn
 ```
 
 ```{r}
-knnActualPlot_alzh<-ggplot(storage,aes(K,GeoMean))+
-  geom_line()+
-  labs(caption = paste("Geometric Mean, ReD Line at K=", which.max(storage$Sensitivity)),title = "Figure 3.2.2 GeoMean Graph of kNN with Best k Shown
-  (10 Fold Cross Validation)",y = " ")+
-  geom_vline(xintercept = which.max(storage$Sensitivity),lty = 2,col="red")
-#Show Plot
-knnActualPlot_alzh
+knn.final<-knn(train = train_x,test = test_x,cl = train_y,k=4)
+table(knn.final,test_y)
 ```
 
 ```{r}
@@ -353,7 +323,7 @@ knitr::kable(table("Prediction" = storage_inner$YHat,"Actual" = alzh_knn$Diagnos
 
 
 
-### GBM (does not produce anything)
+### BART (does not produce anything)
 
 ```{r}
 #ALZH.bart <- ALZH_noID%>%select(-DoctorInCharge)
@@ -390,7 +360,10 @@ accuracy
 
 ```{r}
 set.seed(12345)
-ALZH.gbm<-ALZH_noID%>%select(-DoctorInCharge)%>%mutate(Diagnosis=as.numeric(as.character(Diagnosis)))
+set.seed(12345)
+ALZH.gbm.raw <- ALZH_noID %>% select(-DoctorInCharge) %>% mutate(Diagnosis = as.numeric(as.character(Diagnosis)))
+train_indices <- sample(1:nrow(ALZH.gbm.raw), size = 0.9 * nrow(ALZH.gbm.raw))
+ALZH.gbm <- ALZH.gbm.raw[train_indices, ]
 boosting.try <- gbm(Diagnosis ~ ., data = ALZH.gbm[draw,], distribution = "bernoulli", n.trees = 5000, interaction.depth = 4, shrinkage = 0.01)
 
 ```
@@ -405,15 +378,141 @@ table(pred_gbm_class,ALZH.gbm[-draw,]$Diagnosis)
 set.seed(12345)
 lambda_val <- seq(0.01, 0.1, by = 0.01)
 result_container <- data.frame(Lambda = lambda_val, Recall = rep(0, length(lambda_val)))
+
 for (i in 1:length(lambda_val)) {
-  #cat("Iteration: ", i, "\n")
+ 
   Boosting_alzh <- gbm(Diagnosis ~., data = ALZH.gbm[draw,], distribution = "bernoulli", n.trees = 2000, interaction.depth = 4, shrinkage = lambda_val[i])
   result_container$Recall[i] <-sum(predict(Boosting_alzh, newdata = ALZH.gbm[-draw,], n.trees = 2000, type = "response") > 0.5 & ALZH.gbm[-draw,]$Diagnosis == 1) / sum(ALZH.gbm[-draw,]$Diagnosis == 1)
-  #yhat.boost.inLoop <- predict(Boosting_Hitter, newdata = Hitters.Test, n.trees = 1000)
-  #result_container$Test.MSE[i] <- mean((yhat.boost.inLoop - Hitters.Test$Salary)^2)
+
 }
 plot(x=result_container$Lambda, y=result_container$Recall,xlab = "Lambda", ylab = "Recall", type = "l")
 ```
+
+
+```{r}
+set.seed(12345)
+lambda_val <- seq(0.01, 0.1, by = 0.01)
+result_container <- data.frame(Lambda = lambda_val, Recall = rep(0, length(lambda_val)))
+
+for (i in 1:length(lambda_val)) {
+ 
+  Boosting_alzh <- gbm(Diagnosis ~., data = ALZH.gbm[draw,], distribution = "bernoulli", n.trees = 2000, interaction.depth = 4, shrinkage = lambda_val[i])
+  result_container$Recall[i] <-sum(predict(Boosting_alzh, newdata = ALZH.gbm[-draw,], n.trees = 2000, type = "response") > 0.5 & ALZH.gbm[-draw,]$Diagnosis == 1) / sum(ALZH.gbm[-draw,]$Diagnosis == 1)
+
+}
+plot(x=result_container$Lambda, y=result_container$Recall,xlab = "Lambda", ylab = "Recall", type = "l")
+```
+
+
+```{r}
+set.seed(12345)
+lambda_val <- seq(0.01, 0.1, by = 0.01)
+ntree_val <- c(1000, 2000, 3000,4000,5000
+)
+result <- data.frame()
+
+for (lambda in lambda_val) {
+  cat("Iteration: ", lambda, "\n")
+  for (ntree in ntree_val) {
+    cat("Iteration: ", ntree, "\n")
+    recall_values <- c()
+    precision_values <- c()
+    f1_values <- c()
+    
+    for (fold in 1:10) {
+      infold <- which(fold == sample(rep(1:10, length.out = nrow(ALZH.gbm))))
+      train_data <- ALZH.gbm[-infold, ]
+      test_data <- ALZH.gbm[infold, ]
+      
+      Boosting_alzh <- gbm(Diagnosis ~ ., data = train_data, distribution = "bernoulli", n.trees = ntree, interaction.depth = 4, shrinkage = lambda)
+      pred <- predict(Boosting_alzh, newdata = test_data, n.trees = ntree, type = "response")
+      pred_class <- ifelse(pred > 0.5, 1, 0)
+      
+      tp <- sum(pred_class == 1 & test_data$Diagnosis == 1)
+      fp <- sum(pred_class == 1 & test_data$Diagnosis == 0)
+      fn <- sum(pred_class == 0 & test_data$Diagnosis == 1)
+      
+      recall <- tp / (tp + fn)
+      precision <- tp / (tp + fp)
+      f1_score <- 2 * (precision * recall) / (precision + recall)
+      
+      recall_values <- c(recall_values, recall)
+      precision_values <- c(precision_values, precision)
+      f1_values <- c(f1_values, f1_score)
+    }
+    
+    result <- rbind(result, data.frame(Lambda = lambda, NTree = ntree, Recall = mean(recall_values), Precision = mean(precision_values), F1_Score = mean(f1_values)))
+  }
+}
+
+best_result <- result[which.max(result$Recall), ]
+best_result
+plot(result$Lambda, result$F1_Score, xlab = "Lambda", ylab = "F1 Score", type = "l", col = "blue")
+points(best_result$Lambda, best_result$F1_Score, col = "red", pch = 19)
+```
+
+
+```{r}
+set.seed(12345)
+boosting.azh.after10fold <- gbm(Diagnosis ~ ., data = ALZH.gbm[draw,], distribution = "bernoulli", n.trees = 1000, interaction.depth = 4, shrinkage = 0.01)
+yhat.gbm.10fold<-predict(boosting.azh.after10fold,newdata = ALZH.gbm[-draw,],type = "response",n.trees = 1000,interaction.depth=4,shrinkage=0.01)
+pred_gbm_class.10fold <- ifelse(yhat.gbm.10fold > 0.5, 1, 0)
+table("Prediction" = pred_gbm_class.10fold, "Actual" = ALZH.gbm[-draw,]$Diagnosis)
+```
+
+### 10 fold cv gbm
+
+```{r}
+set.seed(12345)
+lambda_val <- seq(0.01, 0.1, by = 0.01)
+result_container <- data.frame(Lambda = lambda_val, Recall = rep(0, length(lambda_val)))
+
+for (i in 1:length(lambda_val)) {
+  recall_values <- c()
+  
+  for (fold in 1:10) {
+    infold <- which(fold == sample(rep(1:10, length.out = nrow(ALZH.gbm))))
+    train_data <- ALZH.gbm[-infold, ]
+    test_data <- ALZH.gbm[infold, ]
+    
+    Boosting_alzh <- gbm(Diagnosis ~., data = train_data, distribution = "bernoulli", n.trees = 2000, interaction.depth = 4, shrinkage = lambda_val[i])
+    recall <- sum(predict(Boosting_alzh, newdata = test_data, n.trees = 2000, type = "response") > 0.5 & test_data$Diagnosis == 1) / sum(test_data$Diagnosis == 1)
+    recall_values <- c(recall_values, recall)
+  }
+  
+  result_container$Recall[i] <- mean(recall_values)
+}
+
+plot(x = result_container$Lambda, y = result_container$Recall, xlab = "Lambda", ylab = "Recall", type = "l")
+```
+
+```{r}
+set.seed(12345)
+lambda_val <- seq(0.01, 0.1, by = 0.01)
+result_container <- data.frame(Lambda = lambda_val, Recall = rep(0, length(lambda_val)), Precision = rep(0, length(lambda_val)), F1_Score = rep(0, length(lambda_val)))
+
+for (i in 1:length(lambda_val)) {
+  Boosting_alzh <- gbm(Diagnosis ~., data = ALZH.gbm[draw,], distribution = "bernoulli", n.trees = 2000, interaction.depth = 4, shrinkage = lambda_val[i])
+  pred <- predict(Boosting_alzh, newdata = ALZH.gbm[-draw,], n.trees = 2000, type = "response")
+  pred_class <- ifelse(pred > 0.5, 1, 0)
+  
+  tp <- sum(pred_class == 1 & ALZH.gbm[-draw,]$Diagnosis == 1)
+  fp <- sum(pred_class == 1 & ALZH.gbm[-draw,]$Diagnosis == 0)
+  fn <- sum(pred_class == 0 & ALZH.gbm[-draw,]$Diagnosis == 1)
+  
+  recall <- tp / (tp + fn)
+  precision <- tp / (tp + fp)
+  f1_score <- 2 * (precision * recall) / (precision + recall)
+  
+  result_container$Recall[i] <- recall
+  result_container$Precision[i] <- precision
+  result_container$F1_Score[i] <- f1_score
+}
+
+plot(x = result_container$Lambda, y = result_container$F1_Score, xlab = "Lambda", ylab = "F1 Score", type = "l")
+```
+
+
 
 ```{r}
 set.seed(12345)
@@ -421,4 +520,40 @@ Boosting_alzh.final<-gbm(Diagnosis~.,data=ALZH.gbm[draw,],distribution="bernoull
 yhat.boost.final<-predict(Boosting_alzh.final,newdata = ALZH.gbm[-draw,],n.trees = 2000,interaction.depth = 4,shrinkage = 0.01,type = "response")
 pred_gbm_class_final <- ifelse(yhat.boost.final > 0.5, 1, 0)
 table(pred_gbm_class_final,ALZH.gbm[-draw,]$Diagnosis)
+```
+
+
+### tune 2 at once 
+
+
+```{r}
+set.seed(12345)
+lambda_val <- seq(0.01, 0.1, by = 0.01)
+ntree.val<-c(1000,2000,3000,4000,5000)
+result <- data.frame()
+for (i in 1:length(lambda_val)) {
+  #cat("Iteration: ", i, "\n")
+  Boosting_alzh <- gbm(Diagnosis ~., data = ALZH.gbm[draw,], distribution = "bernoulli", n.trees = ntree.val, interaction.depth = 4, shrinkage = lambda_val[i])
+  result_container$Recall[i] <-sum(predict(Boosting_alzh, newdata = ALZH.gbm[-draw,], n.trees = 2000, type = "response") > 0.5 & ALZH.gbm[-draw,]$Diagnosis == 1) / sum(ALZH.gbm[-draw,]$Diagnosis == 1)
+  #yhat.boost.inLoop <- predict(Boosting_Hitter, newdata = Hitters.Test, n.trees = 1000)
+  #result_container$Test.MSE[i] <- mean((yhat.boost.inLoop - Hitters.Test$Salary)^2)
+}
+set.seed(12345)
+lambda_val <- seq(0.01, 0.1, by = 0.01)
+ntree_val <- c(1000, 2000, 3000)
+result <- data.frame()
+
+for (lambda in lambda_val) {
+  for (ntree in ntree_val) {
+    Boosting_alzh <- gbm(Diagnosis ~ ., data = ALZH.gbm[draw,], distribution = "bernoulli", n.trees = ntree, interaction.depth = 4, shrinkage = lambda)
+    recall <- sum(predict(Boosting_alzh, newdata = ALZH.gbm[-draw,], n.trees = ntree, type = "response") > 0.5 & ALZH.gbm[-draw,]$Diagnosis == 1) / sum(ALZH.gbm[-draw,]$Diagnosis == 1)
+    result <- rbind(result, data.frame(Lambda = lambda, NTree = ntree, Recall = recall))
+  }
+}
+
+best_result <- result[which.max(result$Recall), ]
+best_result
+plot(result$Lambda, result$Recall, xlab = "Lambda", ylab = "Recall", type = "l", col = "blue")
+points(best_result$Lambda, best_result$Recall, col = "red", pch = 19)
+#plot(x=result_container$Lambda, y=result_container$Recall,xlab = "Lambda", ylab = "Recall", type = "l")
 ```
