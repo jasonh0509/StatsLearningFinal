@@ -89,6 +89,7 @@ ALZH_noID <- ALZH_noID %>%
 ```{r}
 ALZH.raw <- ALZH_noID %>% select(-DoctorInCharge) %>% mutate(Diagnosis = as.numeric(as.character(Diagnosis)))
 ALZH.gbm <- ALZH.raw
+##Dispite the name, this ALZH.gbm is the data set will be used for all models, the set in other models will be coming from this one. In other words, the copies of this set will be the "root set" of each model
 ```
 
 ```{r}
@@ -113,183 +114,13 @@ ggplot(data = ALZH_noID, mapping = aes(x=Diagnosis,fill=Diagnosis))+
   
 ```
 
-### Exploration of Corerlation of 4 Variables related to 
-
-```{r}
-correlation.mtx.4var<-cor(ALZH_for_explore[,c("CholesterolHDL", "CholesterolLDL", "CholesterolTotal", "CholesterolTriglycerides")], method = "pearson")
-correlation.mtx.4var
-correlation.mtx.4var<-as.data.frame(correlation.mtx.4var)
-knitr::kable(correlation.mtx.4var)
-```
-
-```{r}
-##4 logistic regression models with only response and one of the 4 cholesterol variables
-hdl.logistic<-glm(Diagnosis~CholesterolHDL,data=ALZH_for_explore,family = binomial);summary(hdl.logistic)
-ldl.logistic<-glm(Diagnosis~CholesterolLDL,data=ALZH_for_explore,family = binomial);summary(ldl.logistic)
-total.logistic<-glm(Diagnosis~CholesterolTotal,data=ALZH_for_explore,family = binomial);summary(total.logistic)
-tryglycerides.logistic<-glm(Diagnosis~CholesterolTriglycerides,data=ALZH_for_explore,family = binomial);summary(tryglycerides.logistic)
-
-##HDL is most correlated with the response variable
-```
-
-
-### logistic
-
-
-```{r}
-ALZH.logistic<-ALZH.gbm%>%select(-c(CholesterolTotal,CholesterolLDL,CholesterolTriglycerides))###set for logistic regression directly derived from ALZH.gbm but removed 3 variables.
-n <-nrow(ALZH.logistic);n
-
-set.seed(114514)
-draw<-sample(1:n,size = 1934)##1934 is 90% of the data,here is the rows we use fall all trainig and validation sets in the project, all derived from ALZH.gbm
-##This is the ultimate sample data indces!
-train <-ALZH.logistic[draw,]
-train_x<-train%>%dplyr::select(-Diagnosis)
-train_y<-train%>%dplyr::select(Diagnosis)
-
-test <- ALZH.logistic[-draw,]
-test_x<-test%>%dplyr::select(-Diagnosis)
-test_y <-test$Diagnosis
-
-
-x <-model.matrix(Diagnosis~.,data=ALZH.logistic)
-y <- ALZH.logistic$Diagnosis
-```
-
-
-
-```{r}
-ALZH_logistic <-glm(Diagnosis~.,data=train,family = binomial)
-summary(ALZH_logistic)
-```
-
-```{r eval=FALSE, include=FALSE}
-###subject to fix, look later , 10 fold cv recall higher than actual model
-pred_test<-predict(ALZH_logistic,type='response',newdata = test)
-glm.pred <- ifelse(pred_test > 0.5, 1, 0)
-table(glm.pred, test_y)
-
-set.seed(12345)
-folds <- sample(rep(1:10, length.out = nrow(train)))
-cv_results <- data.frame(Fold = 1:10, Recall = rep(0, 10), Precision = rep(0, 10), F1_Score = rep(0, 10), Accuracy = rep(0, 10))
-
-for (i in 1:10) {
-  train_data <- train[folds != i, ]
-  test_data <- train[folds == i, ]
-  
-  ALZH_logistic_cv <- glm(Diagnosis ~ ., data = train_data, family = binomial)
-  pred_test <- predict(ALZH_logistic_cv, type = 'response', newdata = test_data)
-  glm_pred <- ifelse(pred_test > 0.5, 1, 0)
-  
-  TP <- sum(glm_pred == 1 & test_data$Diagnosis == 1)
-  FP <- sum(glm_pred == 1 & test_data$Diagnosis == 0)
-  FN <- sum(glm_pred == 0 & test_data$Diagnosis == 1)
-  
-  recall <- TP / (TP + FN)
-  precision <- TP / (TP + FP)
-  f1_score <- 2 * (precision * recall) / (precision + recall)
-  accuracy <- sum(glm_pred == test_data$Diagnosis) / length(test_data$Diagnosis)
-  
-  cv_results$Recall[i] <- recall
-  cv_results$Precision[i] <- precision
-  cv_results$F1_Score[i] <- f1_score
-  cv_results$Accuracy[i] <- accuracy
-}
-
-cv_results
-mean(cv_results$Recall)
-mean(cv_results$Precision)
-mean(cv_results$F1_Score)
-mean(cv_results$Accuracy)
-```
-
-
-### lasso
-
-```{r}
-##subject to fix
-library(glmnet)
-grid <- 10^seq(10,-2, length = 100)
-train_y.lasso<-train_y%>%mutate(Diagnosis=as.factor(Diagnosis))
-train_x_lasso<-as.matrix(train_x)
-lasso.mod<-glmnet(train_x_lasso,train_y.lasso$Diagnosis,alpha = 1,lambda = grid,family = "binomial")
-
-summary(lasso.mod)
-cv.out <-cv.glmnet(train_x_lasso, train_y.lasso$Diagnosis, alpha = 1,family="binomial")
-plot(cv.out)
-best_lambda <- cv.out$lambda.min;best_lambda
-```
-
-
-```{r}
-train_y<-as.matrix(train_y)
-lasso.final<-glmnet(train_x_lasso,train_y.lasso$Diagnosis,alpha = 1,lambda = best_lambda,family = "binomial")
-lasso.pred <- predict(lasso.final, s = best_lambda, newx = as.matrix(test_x))
-lasso.pred.class<-ifelse(lasso.pred > 0.5,1,0)
-table(prediction=lasso.pred.class,actual=test_y)
-```
-
-```{r}
-Recall.lasso<-sum(lasso.pred.class == 1 & test_y == 1)/sum(test_y == 1);Recall.lasso
-Precision.lasso<-sum(lasso.pred.class == 1 & test_y == 1)/sum(lasso.pred.class == 1);Precision.lasso
-F1Score.lasso<-2*Precision.lasso*Recall.lasso/(Precision.lasso+Recall.lasso);F1Score.lasso
-Accuracy.lasso<-sum(lasso.pred.class == test_y)/length(test_y);Accuracy.lasso
-```
-
-
-
-```{r}
-ALZH_leanning<-ALZH_noID%>%dplyr::select(-DoctorInCharge)
-bestsubset <- regsubsets(Diagnosis~., data = ALZH_leanning)
-bestsubsum<-summary(bestsubset)
-bestsubsum
-which.min(bestsubsum$cp)
-which.min(bestsubsum$bic)
-which.min(bestsubsum$adjr2)
-```
-
-```{r}
-knitr::kable(coef(bestsubset,8))
-bestSubset_vars <- names(coef(bestsubset, 8))[-1]
-bestSubset_vars
-bestSubset_STR<-paste(bestSubset_vars,collapse = ",")
-```
-
-### A MLR with best subset
-
-```{r}
-set.with.BestsubsetVar<-train%>%dplyr::select(Diagnosis,Age,SleepQuality,CholesterolHDL,MMSE,FunctionalAssessment,MemoryComplaints,BehavioralProblems,ADL)
-MLR_bestsubset<-glm(Diagnosis~.,data=set.with.BestsubsetVar,family="binomial")
-pred.bestsubset<-predict(MLR_bestsubset,newdata = test,type = "response",family="binomial")
-class.bestsubset<-ifelse(pred.bestsubset>0.5,1,0)
-table(class.bestsubset,test_y)
-
-
-```
-
-
-```{r}
-glimpse(ALZH_noID)
-```
-
-```{r}
-ALZH_IntOnly<-ALZH_noID[,sapply(ALZH_noID,is.integer)]
-ALZH_double<-ALZH_noID[,sapply(ALZH_noID,is.double)]
-ALZH_NumOnly<-cbind(ALZH_IntOnly,ALZH_double)
-ALZH_fct<-ALZH_noID[,sapply(ALZH_noID,is.factor)]
-
-```
-
-```{r}
-glimpse(ALZH_NumOnly)
-```
-
 
 ```{r}
 plot_intro(ALZH_noID)
 ```
 
 
+### More EDA focused on positive cases
 
 ```{r positive only set}
 alzh_pos<-subset(ALZH_noID,Diagnosis==1)
@@ -345,14 +176,127 @@ alzh_edu+ggtitle("Alzheimer's and Ethnicity")
 
 ```
 
-```{r}
-age_alz<-ggplot(data=ALZH_noID,aes(x=Age,y=CholesterolTotal,color=Diagnosis))+geom_point()
-age_alz+ggtitle("Figure 2.9 Age vs BMI Respect to Alzh")
 
+
+### Exploration of Corerlation of 4 Variables related to 
+
+```{r}
+correlation.mtx.4var<-cor(ALZH_for_explore[,c("CholesterolHDL", "CholesterolLDL", "CholesterolTotal", "CholesterolTriglycerides")], method = "pearson")
+correlation.mtx.4var
+correlation.mtx.4var<-as.data.frame(correlation.mtx.4var)
+knitr::kable(correlation.mtx.4var)
 ```
 
 ```{r}
-plot_correlation(ALZH_NumOnly)
+##4 logistic regression models with only response and one of the 4 cholesterol variables
+hdl.logistic<-glm(Diagnosis~CholesterolHDL,data=ALZH_for_explore,family = binomial);summary(hdl.logistic)
+ldl.logistic<-glm(Diagnosis~CholesterolLDL,data=ALZH_for_explore,family = binomial);summary(ldl.logistic)
+total.logistic<-glm(Diagnosis~CholesterolTotal,data=ALZH_for_explore,family = binomial);summary(total.logistic)
+tryglycerides.logistic<-glm(Diagnosis~CholesterolTriglycerides,data=ALZH_for_explore,family = binomial);summary(tryglycerides.logistic)
+
+##HDL is most correlated with the response variable
+```
+
+
+### logistic
+
+
+```{r}
+ALZH.logistic<-ALZH.gbm%>%select(-c(CholesterolTotal,CholesterolLDL,CholesterolTriglycerides))###set for logistic regression directly derived from ALZH.gbm but removed 3 variables.
+n <-nrow(ALZH.logistic);n
+
+set.seed(114514)
+draw<-sample(1:n,size = 1934)##1934 is 90% of the data,here is the rows we use fall all trainig and validation sets in the project, all derived from ALZH.gbm
+##This is the ultimate sample data indces!
+train <-ALZH.logistic[draw,]
+train_x<-train%>%dplyr::select(-Diagnosis)
+train_y<-train%>%dplyr::select(Diagnosis)
+
+test <- ALZH.logistic[-draw,]
+test_x<-test%>%dplyr::select(-Diagnosis)
+test_y <-test$Diagnosis
+
+
+x <-model.matrix(Diagnosis~.,data=ALZH.logistic)
+y <- ALZH.logistic$Diagnosis
+```
+
+
+
+```{r}
+ALZH_logistic <-glm(Diagnosis~.,data=train,family = binomial)
+summary(ALZH_logistic)
+
+pred_test<-predict(ALZH_logistic,type='response',newdata = test)
+glm.pred <- ifelse(pred_test > 0.5, 1, 0)
+table(glm.pred, test_y)
+Recall.regular.glm<-sum(glm.pred == 1 & test_y == 1)/sum(test_y == 1);Recall.regular.glm
+Precision.regular.glm<-sum(glm.pred == 1 & test_y == 1)/sum(glm.pred == 1);Precision.regular.glm
+F1Score.regular.glm<-2*Precision.regular.glm*Recall.regular.glm/(Precision.regular.glm+Recall.regular.glm);F1Score.regular.glm 
+Accuracy.regular.glm<-sum(glm.pred == test_y)/length(test_y);Accuracy.regular.glm
+```
+
+
+### MLR with best subset
+
+```{r}
+ALZH_leanning<-ALZH_noID%>%dplyr::select(-DoctorInCharge)
+bestsubset <- regsubsets(Diagnosis~., data = ALZH_leanning)
+bestsubsum<-summary(bestsubset)
+bestsubsum
+which.min(bestsubsum$cp)
+which.min(bestsubsum$bic)
+which.min(bestsubsum$adjr2)
+```
+
+```{r}
+knitr::kable(coef(bestsubset,8))
+bestSubset_vars <- names(coef(bestsubset, 8))[-1]
+bestSubset_vars
+bestSubset_STR<-paste(bestSubset_vars,collapse = ",")
+```
+
+### A MLR with best subset
+
+```{r}
+set.with.BestsubsetVar<-train%>%dplyr::select(Diagnosis,Age,SleepQuality,CholesterolHDL,MMSE,FunctionalAssessment,MemoryComplaints,BehavioralProblems,ADL)
+MLR_bestsubset<-glm(Diagnosis~.,data=set.with.BestsubsetVar,family="binomial")
+pred.bestsubset<-predict(MLR_bestsubset,newdata = test,type = "response",family="binomial")
+class.bestsubset<-ifelse(pred.bestsubset>0.5,1,0)
+table(class.bestsubset,test_y)
+```
+
+
+### lasso
+
+```{r}
+##subject to fix
+library(glmnet)
+grid <- 10^seq(10,-2, length = 100)
+train_y.lasso<-train_y%>%mutate(Diagnosis=as.factor(Diagnosis))
+train_x_lasso<-as.matrix(train_x)
+lasso.mod<-glmnet(train_x_lasso,train_y.lasso$Diagnosis,alpha = 1,lambda = grid,family = "binomial")
+
+summary(lasso.mod)
+cv.out <-cv.glmnet(train_x_lasso, train_y.lasso$Diagnosis, alpha = 1,family="binomial",nfolds = 10)
+plot(cv.out)
+best_lambda <- cv.out$lambda.min;best_lambda
+```
+
+
+```{r}
+train_y<-as.matrix(train_y)
+lasso.final<-glmnet(train_x_lasso,train_y.lasso$Diagnosis,alpha = 1,lambda = best_lambda,family = "binomial")
+lasso.pred <- predict(lasso.final, s = best_lambda, newx = as.matrix(test_x))
+lasso.pred.class<-ifelse(lasso.pred > 0.5,1,0)
+table(prediction=lasso.pred.class,actual=test_y)
+```
+
+```{r}
+Recall.lasso<-sum(lasso.pred.class == 1 & test_y == 1)/sum(test_y == 1);Recall.lasso
+Precision.lasso<-sum(lasso.pred.class == 1 & test_y == 1)/sum(lasso.pred.class == 1);Precision.lasso
+F1Score.lasso<-2*Precision.lasso*Recall.lasso/(Precision.lasso+Recall.lasso);F1Score.lasso
+Accuracy.lasso<-sum(lasso.pred.class == test_y)/length(test_y);Accuracy.lasso
 ```
 
 
@@ -364,122 +308,46 @@ ALZH_noID_noCholest<-
 
 
 
-### BART (does not produce anything)
-
-```{r}
-#ALZH.bart <- ALZH_noID%>%select(-DoctorInCharge)
-ALZH.bart <- ALZH_noID %>% select(where(is.numeric),Diagnosis)
-ALZH.bart$Diagnosis<-as.numeric(as.character(ALZH.bart$Diagnosis))
-```
-
-```{r}
-set.seed(114514)
-x_bart <- ALZH.bart %>% select(-Diagnosis)
-y_bart <- ALZH.bart$Diagnosis
-x_train_bart <- x_bart[draw, ]
-y_train_bart <- as.numeric(as.character(y_bart[draw]))
-
-x_test <- x_bart[-draw, ]
-y_test <- y_bart[-draw]
-bart_alzh <- gbart(
-  x.train = x_train_bart,
-  y.train = y_train_bart,
-  x.test = x_test,
-  type = "pbart",
-  k = 1,
-  ndpost = 2000
-)
-
-pred_bart <- bart_alzh$yhat.test.mean
-pred_bart_class <- ifelse(pred_bart > 0.5, 1, 0)
-accuracy <- mean(pred_bart_class == y_test)
-accuracy
-```
-
-
-### gbm
-
-```{r}
-set.seed(12345)
-ALZH.boosting<-ALZH.gbm%>%select(-c(CholesterolTotal,CholesterolLDL,CholesterolTriglycerides))
-#ALZH.gbm.raw <- ALZH_noID %>% select(-DoctorInCharge) %>% mutate(Diagnosis = as.numeric(as.character(Diagnosis)))
-#ALZH.gbm <- ALZH.gbm.raw
-boosting.try <- gbm(Diagnosis ~ ., data = ALZH.boosting[draw,], distribution = "bernoulli", n.trees = 5000, interaction.depth = 4, shrinkage = 0.01)
-
-```
-
-```{r}
-yhat.gbm<-predict(boosting.try,newdata = ALZH.gbm[-draw,],n.trees = 5000,interaction.depth = 4,shrinkage = 0.01,type = "response")
-pred_gbm_class <- ifelse(yhat.gbm > 0.5, 1, 0)
-table(pred_gbm_class,ALZH.gbm[-draw,]$Diagnosis)
-```
-
-
-
-
-```{r}
-set.seed(12345)
-lambda_val <- seq(0.01, 0.05, by = 0.01)
-result_container <- data.frame(Lambda = lambda_val, Recall = rep(0, length(lambda_val)), Precision = rep(0, length(lambda_val)), F1_Score = rep(0, length(lambda_val)),Accuracy=rep(0,length(lambda_val)))
-ALZH.boosting.forTunine<-ALZH.gbm[draw,]
-ALZH.boosting.realTest<-ALZH.gbm[-draw,]
-
-```
-
-```{r,eval=FALSE, include=FALSE}
-##This chunk only have calculation of precision, recall, f1 score and accuracy are missing
-for (i in 1:length(lambda_val)) {
-  Recall_inLoop<-c()
-  Precision_inLoop<-c()
-  F1_Score_inLoop<-c()
-  Accuracy_inLoop<-c()
-  for (j in 1:10){
-  
-
-  infold<-which(j == sample(rep(1:10,nrow(ALZH.gbm))))
-  TrainD<-ALZH.boosting.forTunine[-infold,]
-  TestD<-ALZH.boosting.forTunine[infold,]
- 
-  Boosting_alzh <- gbm(Diagnosis ~., data = TrainD, distribution = "bernoulli", n.trees = 2000, interaction.depth = 4, shrinkage = lambda_val[i])
-  pred <- predict(Boosting_alzh, newdata = TestD, n.trees = 2000, type = "response")
-  pred_class <- ifelse(pred > 0.5, 1, 0)
-  TP<-sum(pred_class == 1 & TestD$Diagnosis == 1)
-  FP<-sum(pred_class == 1 & TestD$Diagnosis == 0)
-  FN<-sum(pred_class == 0 & TestD$Diagnosis == 1)
-
-  Recall <- ifelse((TP + FN) == 0, 0, TP / (TP + FN))
-  Precision <- ifelse((TP + FP) == 0, 0, TP / (TP + FP))
-  F1_score <- ifelse((Precision + Recall) == 0, 0, 2 * (Precision * Recall) / (Precision + Recall))
-  Accuracy <- sum(pred_class == TestD$Diagnosis) / length(TestD$Diagnosis)
-
-  Recall_inLoop<-c(Recall_inLoop,Recall)
-  Precision_inLoop<-c(Precision_inLoop,Precision)
-  F1_Score_inLoop<-c(F1_Score_inLoop,F1_score)
-  Accuracy_inLoop<-c(Accuracy_inLoop,Accuracy)
-
-
-}
-  result_container$Recall[i]<-mean(Recall_inLoop)
-  result_container$Precision[i]<-mean(Precision_inLoop)
-  result_container$F1_Score[i]<-mean(F1_Score_inLoop)
-  result_container$Accuracy[i]<-mean(Accuracy_inLoop)
-
-}
-plot(x=result_container$Lambda, y=result_container$Recall,xlab = "Lambda", ylab = "Recall", type = "l")
-view(result_container)
-```
-
-
-
 
 ### KNN
 
 ```{r}
+ALZH_IntOnly<-ALZH_noID[,sapply(ALZH.gbm,is.integer)]
+ALZH_double<-ALZH_noID[,sapply(ALZH.gbm,is.double)]
+ALZH_NumOnly<-cbind(ALZH_IntOnly,ALZH_double)
+ALZH_fct<-ALZH_noID[,sapply(ALZH.gbm,is.factor)]
+
+```
+
+
+```{r}
+plot_correlation(ALZH_NumOnly)
+```
+
+#### Feature Selection for kNN
+
+```{r}
+#RFE.featureSet<-ALZH_NumOnly[draw,]%>%dplyr::select(-Diagnosis,DoctorInCharge)
+#RFE.featureSet<-as.data.frame(RFE.featureSet)
+#RFE.response<-ALZH_NumOnly[draw,]%>%dplyr::select(Diagnosis)
+
+RFE.featureSet <- ALZH_NumOnly[draw,-which(names(ALZH_NumOnly) == "Diagnosis")]
+RFE.featureSet<-RFE.featureSet[,-which(names(RFE.featureSet) == "DoctorInCharge")]
+RFE.featureSet<-RFE.featureSet%>%select(-c(CholesterolTotal,CholesterolLDL,CholesterolTriglycerides))
+RFE.response <- ALZH_NumOnly[draw, "Diagnosis"]
+
+set.seed(12345)
+control<-rfeControl(functions = rfFuncs, method = "cv", number = 10)
+RFE.result<-rfe(RFE.featureSet,RFE.response, sizes = c(1:13), rfeControl = control)
+print(RFE.result)
+```
+
+```{r}
 #alzh_secondKNN and the later alzh.gbm.forTuning are the same
-alzh_secondKNN<-ALZH.gbm[draw,]%>%
-dplyr::select(Diagnosis,Age,BMI,AlcoholConsumption,DietQuality,SleepQuality,ADL)%>%
+alzh_secondKNN<-ALZH_NumOnly[draw,]%>%
+dplyr::select(FunctionalAssessment, MMSE, ADL, DietQuality, SleepQuality,Diagnosis)%>%
 mutate(Diagnosis=as.factor(Diagnosis))
-alzh_secondKNN.test<-ALZH.gbm[-draw,]%>%dplyr::select(Diagnosis,Age,BMI,AlcoholConsumption,DietQuality,SleepQuality,ADL)%>%
+alzh_secondKNN.test<-ALZH.gbm[-draw,]%>%dplyr::select(FunctionalAssessment, MMSE, ADL, DietQuality, SleepQuality,Diagnosis)%>%
 mutate(Diagnosis=as.factor(Diagnosis))
 ```
 
@@ -537,9 +405,39 @@ Perf.Metric.knn
 knn.final<-knn(train = alzh_secondKNN%>%select(-Diagnosis),test = alzh_secondKNN.test%>%select(-Diagnosis),cl = alzh_secondKNN$Diagnosis,k=1)
 table(knn.final,alzh_secondKNN.test$Diagnosis)
 Recall.knn.final<-sum(knn.final == 1 & alzh_secondKNN.test$Diagnosis == 1)/sum(alzh_secondKNN.test$Diagnosis == 1);Recall.knn.final
+Precision.knn.final<-sum(knn.final == 1 & alzh_secondKNN.test$Diagnosis == 1)/sum(knn.final == 1);Precision.knn.final
+F1Score.knn.final<-2*Precision.knn.final*Recall.knn.final/(Precision.knn.final+Recall.knn.final);F1Score.knn.final
+Accuracy.knn.final<-sum(knn.final == alzh_secondKNN.test$Diagnosis)/length(alzh_secondKNN.test$Diagnosis);Accuracy.knn.final
 ```
 
 
+### gbm
+
+```{r}
+set.seed(12345)
+ALZH.boosting<-ALZH.gbm%>%select(-c(CholesterolTotal,CholesterolLDL,CholesterolTriglycerides))
+boosting.try <- gbm(Diagnosis ~ ., data = ALZH.boosting[draw,], distribution = "bernoulli", n.trees = 5000, interaction.depth = 4, shrinkage = 0.01)
+
+```
+
+```{r}
+yhat.gbm<-predict(boosting.try,newdata = ALZH.gbm[-draw,],n.trees = 5000,interaction.depth = 4,shrinkage = 0.01,type = "response")
+pred_gbm_class <- ifelse(yhat.gbm > 0.5, 1, 0)
+table(pred_gbm_class,ALZH.gbm[-draw,]$Diagnosis)
+```
+
+
+```{r}
+set.seed(12345)
+lambda_val <- seq(0.01, 0.05, by = 0.01)
+result_container <- data.frame(Lambda = lambda_val, Recall = rep(0, length(lambda_val)), Precision = rep(0, length(lambda_val)), F1_Score = rep(0, length(lambda_val)),Accuracy=rep(0,length(lambda_val)))
+ALZH.boosting.forTunine<-ALZH.gbm[draw,]
+ALZH.boosting.realTest<-ALZH.gbm[-draw,]
+
+```
+
+### Tune Together with 10 fold cv
+###### This one is correct!!
 
 ```{r}
 ALZH.gbm.forTuning<-ALZH.gbm[draw,]
@@ -547,13 +445,11 @@ ALZH.gbm.realTest<-ALZH.gbm[-draw,]
 ```
 
 
-### Tune Together with 10 fold cv
-###### This one is correct!!
 
 ```{r}
 set.seed(12345)
 lambda_val <- seq(0.01, 0.07, by = 0.01)
-ntree_val <- c(1000, 2000, 3000,4000,5000)
+ntree_val <- c(1000, 2000, 3000,4000)
 
 ALZH.gbm.forGrid<-ALZH.gbm.forTuning%>%select(-c(CholesterolTotal,CholesterolLDL,CholesterolTriglycerides))
 #ALZH.gbm.forGrid$Diagnosis<-as.numeric(ALZH.gbm.forGrid$Diagnosis)
