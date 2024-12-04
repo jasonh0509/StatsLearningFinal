@@ -480,7 +480,8 @@ Boosting_alzh_grid$results
 Boosting_alzh_grid$bestTune
 
 set.seed(12345)
-Boosting_alzh_grid.final<-gbm(Diagnosis~.,data=ALZH.gbm.forGrid,distribution="bernoulli",n.trees=1000,interaction.depth=4,shrinkage=0.01)
+for.final.gbm<-ALZH.gbm.forTuning%>%select(-c(CholesterolTotal,CholesterolLDL,CholesterolTriglycerides))
+Boosting_alzh_grid.final<-gbm(Diagnosis~.,data=for.final.gbm,distribution="bernoulli",n.trees=1000,interaction.depth=4,shrinkage=0.01)
 yhat.boost.final<-predict(Boosting_alzh_grid.final,newdata = ALZH.gbm.realTest,n.trees = 1000,interaction.depth = 4,shrinkage = 0.01,type = "response")
 pred_gbm_class_final <- ifelse(yhat.boost.final > 0.5, 1, 0)
 table(pred_gbm_class_final,ALZH.gbm.realTest$Diagnosis)
