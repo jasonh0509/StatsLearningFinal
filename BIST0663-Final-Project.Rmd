@@ -8,10 +8,14 @@ output:
   number_sections: true
 ---
 
+
+\newpage 
+
 ```{r,eval=TRUE}
 ##This chunk is only needed when running on Jason's laptop.If it is on Jason's device change eval=TRUE
 options("install.lock"=FALSE)
 ```
+
 
 ```{r}
 library(xfun)
@@ -454,7 +458,7 @@ ALZH.gbm.realTest<-ALZH.gbm[-draw,]
 
 
 
-```{r,eval=FALSE}
+```{r,eval=TRUE,include=TRUE}
 set.seed(12345)
 lambda_val <- seq(0.01, 0.03, by = 0.01)
 ntree_val <- c(1000, 2000, 3000)
@@ -479,12 +483,14 @@ Boosting_alzh_grid <- train(
   trControl = train.control, 
   tuneGrid = grid, 
   distribution = "bernoulli",
-  metric = "Recall",
+  metric = "ROC",
   verbose=TRUE,
   train.fraction = 0.9
 )
 
-Boosting_alzh_grid$results
+
+gridTrainResult<-as.data.frame(Boosting_alzh_grid$results)
+gridTrainResult[which.max(gridTrainResult$Sens),]
 Boosting_alzh_grid$bestTune
 
 set.seed(12345)
