@@ -2,13 +2,21 @@
 title: "BISST0663_Final_Project"
 author: "Jueshen Hou  Zimeng Ren"
 date: "2024-10-09"
-output: pdf_document
+output: 
+  pdf_document:
+  toc: true
+  number_sections: true
 ---
 
 ```{r,eval=TRUE}
 ##This chunk is only needed when running on Jason's laptop.If it is on Jason's device change eval=TRUE
 options("install.lock"=FALSE)
 ```
+
+```{r}
+library(xfun)
+```
+
 
 ```{r install package in case you do not have it, eval=FALSE, include=FALSE}
 ##These packages are needed for later code chunks,if you do not have the following packages installed, please run this chunk to ensure all packages needed are installed.
@@ -446,13 +454,13 @@ ALZH.gbm.realTest<-ALZH.gbm[-draw,]
 
 
 
-```{r}
+```{r,eval=FALSE}
 set.seed(12345)
 lambda_val <- seq(0.01, 0.03, by = 0.01)
 ntree_val <- c(1000, 2000, 3000)
 
 ALZH.gbm.forGrid<-ALZH.gbm.forTuning%>%select(-c(CholesterolTotal,CholesterolLDL,CholesterolTriglycerides))
-ALZH.gbm.forGrid$Diagnosis <- factor(ALZH.gbm.forGrid$Diagnosis, levels = c(0, 1), labels = c("No", "Yes"))
+ALZH.gbm.forGrid$Diagnosis <- factor(ALZH.gbm.forGrid$Diagnosis, levels = c(0, 1), labels = c("No", "Yes"))##This ensure format align with training requirement
 ALZH.gbm.realTest<-ALZH.gbm[-draw,]%>%select(-c(CholesterolTotal,CholesterolLDL,CholesterolTriglycerides))
 
 
