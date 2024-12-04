@@ -448,11 +448,11 @@ ALZH.gbm.realTest<-ALZH.gbm[-draw,]
 
 ```{r}
 set.seed(12345)
-lambda_val <- seq(0.01, 0.07, by = 0.01)
-ntree_val <- c(1000, 2000, 3000,4000)
+lambda_val <- seq(0.01, 0.03, by = 0.01)
+ntree_val <- c(1000, 2000, 3000)
 
 ALZH.gbm.forGrid<-ALZH.gbm.forTuning%>%select(-c(CholesterolTotal,CholesterolLDL,CholesterolTriglycerides))
-#ALZH.gbm.forGrid$Diagnosis<-as.numeric(ALZH.gbm.forGrid$Diagnosis)
+ALZH.gbm.forGrid$Diagnosis <- factor(ALZH.gbm.forGrid$Diagnosis, levels = c(0, 1), labels = c("No", "Yes"))
 ALZH.gbm.realTest<-ALZH.gbm[-draw,]%>%select(-c(CholesterolTotal,CholesterolLDL,CholesterolTriglycerides))
 
 
