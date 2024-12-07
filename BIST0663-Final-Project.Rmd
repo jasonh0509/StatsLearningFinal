@@ -246,6 +246,8 @@ Recall.regular.glm<-sum(glm.pred == 1 & test_y == 1)/sum(test_y == 1);Recall.reg
 Precision.regular.glm<-sum(glm.pred == 1 & test_y == 1)/sum(glm.pred == 1);Precision.regular.glm
 F1Score.regular.glm<-2*Precision.regular.glm*Recall.regular.glm/(Precision.regular.glm+Recall.regular.glm);F1Score.regular.glm 
 Accuracy.regular.glm<-sum(glm.pred == test_y)/length(test_y);Accuracy.regular.glm
+
+Metric.regular<-data.frame("Recall"=Recall.regular.glm,"Precision"=Precision.regular.glm,"F1 score"=F1Score.regular.glm,"Accuracy"=Accuracy.regular.glm)
 ```
 
 
@@ -276,6 +278,13 @@ MLR_bestsubset<-glm(Diagnosis~.,data=set.with.BestsubsetVar,family="binomial")
 pred.bestsubset<-predict(MLR_bestsubset,newdata = test,type = "response",family="binomial")
 class.bestsubset<-ifelse(pred.bestsubset>0.5,1,0)
 table(class.bestsubset,test_y)
+
+Recall.mlr.bestSub<-sum(class.bestsubset==1&test_y==1)/sum(test_y==1);Recall.mlr.bestSub
+Precision.mlr.bestSub<-sum(class.bestsubset == 1 & test_y == 1)/sum(class.bestsubset == 1);Precision.mlr.bestSub
+F1Score.mlr.bestSub<-2*Precision.mlr.bestSub*Recall.mlr.bestSub/(Precision.mlr.bestSub+Recall.mlr.bestSub);F1Score.mlr.bestSub
+Accuracy.mlr.bestSub<-sum(class.bestsubset == test_y)/length(test_y);Accuracy.mlr.bestSub
+
+Metric.mlr.bestSub<-data.frame("Recall"= Recall.mlr.bestSub,"Precision"=Precision.mlr.bestSub,"F1 score"=F1Score.mlr.bestSub,"Accuracy"=Accuracy.mlr.bestSub)
 ```
 
 
@@ -309,6 +318,7 @@ Recall.lasso<-sum(lasso.pred.class == 1 & test_y == 1)/sum(test_y == 1);Recall.l
 Precision.lasso<-sum(lasso.pred.class == 1 & test_y == 1)/sum(lasso.pred.class == 1);Precision.lasso
 F1Score.lasso<-2*Precision.lasso*Recall.lasso/(Precision.lasso+Recall.lasso);F1Score.lasso
 Accuracy.lasso<-sum(lasso.pred.class == test_y)/length(test_y);Accuracy.lasso
+Metric.lasso<-data.frame("Recall"=Recall.lasso,"Precision"=Precision.lasso,"Accuracy"=Accuracy.lasso,"F1 score"=F1Score.lasso)
 ```
 
 
@@ -421,6 +431,9 @@ Precision.knn.final<-sum(knn.final == 1 & alzh_secondKNN.test$Diagnosis == 1)/su
 F1Score.knn.final<-2*Precision.knn.final*Recall.knn.final/(Precision.knn.final+Recall.knn.final);F1Score.knn.final
 Accuracy.knn.final<-sum(knn.final == alzh_secondKNN.test$Diagnosis)/length(alzh_secondKNN.test$Diagnosis);Accuracy.knn.final
 ```
+```{r}
+Metric.knn<-data.frame("Recall"= Recall.knn.final,"Precision"=Precision.knn.final,"Accuracy"=Accuracy.knn.final,"F1 score"=F1Score.knn.final)
+```
 
 
 ### gbm
@@ -498,8 +511,7 @@ for.final.gbm<-ALZH.gbm.forTuning%>%select(-c(CholesterolTotal,CholesterolLDL,Ch
 Boosting_alzh_grid.final<-gbm(Diagnosis~.,data=for.final.gbm,distribution="bernoulli",n.trees=1000,interaction.depth=4,shrinkage=0.01)
 yhat.boost.final<-predict(Boosting_alzh_grid.final,newdata = ALZH.gbm.realTest,n.trees = 1000,interaction.depth = 4,shrinkage = 0.01,type = "response")
 pred_gbm_class_final <- ifelse(yhat.boost.final > 0.5, 1, 0)
-table(pred_gbm_class_final,ALZH.gbm.realTest$Diagnosis)
-
+knitr::kable(table(pred_gbm_class_final,ALZH.gbm.realTest$Diagnosis))
 
 Recall.grid.gbm<-sum(pred_gbm_class_final == 1 & ALZH.gbm.realTest$Diagnosis == 1)/sum(ALZH.gbm.realTest$Diagnosis == 1)
 Precision.grid.gbm<-sum(pred_gbm_class_final == 1 & ALZH.gbm.realTest$Diagnosis == 1)/sum(pred_gbm_class_final == 1)
@@ -510,6 +522,14 @@ Recall.grid.gbm
 Accuracy.grid.gbm
 Precision.grid.gbm
 F1_Score.grid.gbm
+Metric.gbm<-data.frame("Recall"= Recall.grid.gbm,"Precision"=Precision.grid.gbm,"Accuracy"=Accuracy.grid.gbm,"F1 score"=F1_Score.grid.gbm)
 ```
 
+```{r}
+
+Metric.All<-rbind(Metric.regular,Metric.mlr.bestSub,Metric.lasso,Metric.knn,Metric.gbm)
+Method<-c("Regular MLR","MLR Best Subset","Lasso","KNN","GBM")
+Metric.All<-cbind(Method,Metric.All)
+knitr::kable(Metric.All)
+```
 
