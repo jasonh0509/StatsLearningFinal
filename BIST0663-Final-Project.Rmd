@@ -27,6 +27,7 @@ library(xfun)
 install.packages(c("ggplot2","broom","gridExtra","class","tidyverse","leaps","corrplot","RColorBrewer","glmnet","xtable","randomForest","pROC","devtools","UpSetR","naniar","report","rpart","rattle","rpart.plot"))
 install.packages("randomForest")
 install.packages("caret")
+install.packages("yardstick")
 ```
 
 ```{r}
@@ -132,7 +133,10 @@ plot_intro(ALZH_noID)
 ```
 
 
+
+
 ### More EDA focused on positive cases
+
 
 ```{r positive only set}
 alzh_pos<-subset(ALZH_noID,Diagnosis==1)
@@ -152,7 +156,7 @@ alzh_diab<-alzh_pos%>%
   geom_col()+
   labs(y="Count of Alzheimer's ")
 alzh_diab+ggtitle("Alzheimer's in Diabetics")
-
+alzh_diab
 ```
 
 ```{r}
@@ -189,15 +193,47 @@ alzh_edu+ggtitle("Alzheimer's and Ethnicity")
 ```
 
 
+```{r}
+alzh_depression<-alzh_pos%>%
+  group_by(Depression)%>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = Depression, y = n,fill=Depression))+
+  geom_col()+
+  labs(y="Count of Alzheimer's ")
+alzh_depression+ggtitle("Alzheimer's and Depression")
+
+```
+
+```{r}
+alzh_family<-alzh_pos%>%
+  group_by(FamilyHistoryAlzheimers)%>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = FamilyHistoryAlzheimers, y = n,fill=FamilyHistoryAlzheimers))+
+  geom_col()+
+  labs(y="Count of Alzheimer's ")
+alzh_family+ggtitle("Alzheimer's and Family History")
+
+```
+
+```{r}
+MMSE.scatter<-ggplot(data = ALZH_noID,mapping = aes(x=Age,y=MMSE,color=Diagnosis))+
+  geom_jitter()
+MMSE.scatter+ggtitle("Age vs MMSE Respect to Disease Status")
+```
+
+
+
+
 
 ### Exploration of Corerlation of 4 Variables related to 
 
 ```{r}
-correlation.mtx.4var<-cor(ALZH_for_explore[,c("CholesterolHDL", "CholesterolLDL", "CholesterolTotal", "CholesterolTriglycerides")], method = "pearson")
+correlation.mtx.4var<-cor(ALZH_for_explore[,c("CholesterolHDL", "CholesterolLDL", "CholesterolTotal", "CholesterolTriglycerides")], method = "kendall")
 correlation.mtx.4var
 correlation.mtx.4var<-as.data.frame(correlation.mtx.4var)
 knitr::kable(correlation.mtx.4var)
 ```
+
 
 ```{r}
 ##4 logistic regression models with only response and one of the 4 cholesterol variables
@@ -247,7 +283,7 @@ Precision.regular.glm<-sum(glm.pred == 1 & test_y == 1)/sum(glm.pred == 1);Preci
 F1Score.regular.glm<-2*Precision.regular.glm*Recall.regular.glm/(Precision.regular.glm+Recall.regular.glm);F1Score.regular.glm 
 Accuracy.regular.glm<-sum(glm.pred == test_y)/length(test_y);Accuracy.regular.glm
 
-Metric.regular<-data.frame("Recall"=Recall.regular.glm,"Precision"=Precision.regular.glm,"F1 score"=F1Score.regular.glm,"Accuracy"=Accuracy.regular.glm)
+Metric.regular<-data.frame("Recall"=Recall.regular.glm,"Precision"=Precision.regular.glm,"Accuracy"=Accuracy.regular.glm,"F1 score"= F1Score.regular.glm)
 ```
 
 
@@ -360,7 +396,7 @@ RFE.response <- ALZH_NumOnly[draw, "Diagnosis"]
 
 set.seed(12345)
 control<-rfeControl(functions = rfFuncs, method = "cv", number = 10)
-RFE.result<-rfe(RFE.featureSet,RFE.response, sizes = c(1:13), rfeControl = control)
+RFE.result<-rfe(RFE.featureSet,RFE.response, sizes = c(1:15), rfeControl = control)
 print(RFE.result)
 ```
 
@@ -448,7 +484,7 @@ boosting.try <- gbm(Diagnosis ~ ., data = ALZH.boosting[draw,], distribution = "
 ```{r}
 yhat.gbm<-predict(boosting.try,newdata = ALZH.gbm[-draw,],n.trees = 5000,interaction.depth = 4,shrinkage = 0.01,type = "response")
 pred_gbm_class <- ifelse(yhat.gbm > 0.5, 1, 0)
-table(pred_gbm_class,ALZH.gbm[-draw,]$Diagnosis)
+knitr::kable(table("Prediction"=pred_gbm_class,"Actual"=ALZH.gbm[-draw,]$Diagnosis))
 ```
 
 
@@ -524,6 +560,107 @@ Precision.grid.gbm
 F1_Score.grid.gbm
 Metric.gbm<-data.frame("Recall"= Recall.grid.gbm,"Precision"=Precision.grid.gbm,"Accuracy"=Accuracy.grid.gbm,"F1 score"=F1_Score.grid.gbm)
 ```
+
+
+
+
+
+
+
+
+
+```{r chunk of gbm without parallel}
+
+alzh.forCI<-ALZH.gbm
+#alzh.forCI$Diagnosis<-as.factor(alzh.forCI$Diagnosis)
+set.seed(99325)
+recall.forCI<-numeric()
+
+for (m in 1:10){
+  print(m)
+  cv.folds<-createFolds(alzh.forCI$Diagnosis,5)
+  recall.contain<-numeric()
+
+  for (fold in cv.folds){
+    train_data<-alzh.forCI[-fold,]
+    test_data<-alzh.forCI[fold,]
+    
+   model<-gbm(Diagnosis~.,data=train_data,distribution="bernoulli",n.trees=1000,interaction.depth=4,shrinkage=0.01)
+    
+    preds<-predict(model,newdata=test_data,n.trees = 1000,interaction.depth = 4,shrinkage = 0.01,type="response")
+    preds_class<-ifelse(preds>0.5,1,0)
+    
+    
+    preds_class<-as.factor(preds_class)
+    test_data$Diagnosis<-as.factor(test_data$Diagnosis)
+    confusion<-confusionMatrix(preds_class,test_data$Diagnosis)
+    
+    recall.contain<-c(recall.contain,confusion$byClass["Sensitivity"])
+    mean.recall<-mean(recall.contain)
+      
+  }
+  mean.recall<-mean(recall.contain)
+  recall.forCI<-c(recall.forCI,mean.recall)
+
+}
+```
+
+
+
+
+```{r attempt to parallel gbm}
+library(caret)
+library(gbm)
+library(foreach)
+library(doParallel)
+
+num_cores <- detectCores() - 1
+registerDoParallel(cores = num_cores)
+
+set.seed(99325)
+recall.forCI <- foreach(
+  m = 1:100, 
+  .combine = c,  
+  .packages = c("caret", "gbm") 
+) %dopar% {
+  set.seed(99325)
+  
+  cv.folds <- createFolds(alzh.forCI$Diagnosis, 5)
+  
+ 
+  recall.contain <- numeric()
+  
+  
+  for (fold in cv.folds){
+    train_data <- alzh.forCI[-fold,]
+    test_data <- alzh.forCI[fold,]
+    
+    model <- gbm(Diagnosis ~ ., data = train_data, distribution = "bernoulli", 
+      n.trees = 1000, 
+      interaction.depth = 4, 
+      shrinkage = 0.01
+    )
+    
+    preds <- predict(model, newdata = test_data, n.trees = 1000, interaction.depth = 4, shrinkage = 0.01, type = "response")
+    
+    preds_class <- ifelse(preds > 0.5, 1, 0)
+    
+    preds_class <- as.factor(preds_class)
+    test_data$Diagnosis <- as.factor(test_data$Diagnosis)
+    
+    confusion <- confusionMatrix(preds_class, test_data$Diagnosis)
+    
+    recall.contain <- c(recall.contain, confusion$byClass["Sensitivity"])
+    mean.recall <- mean(recall.contain)
+  }
+  
+  return(mean.recall)
+}
+
+
+stopImplicitCluster()
+```
+
 
 ```{r}
 
