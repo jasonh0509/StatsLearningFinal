@@ -227,7 +227,7 @@ MMSE.scatter+ggtitle("Age vs MMSE Respect to Disease Status")
 
 ### Exploration of Corerlation of 4 Variables related to 
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 correlation.mtx.4var<-cor(ALZH_for_explore[,c("CholesterolHDL", "CholesterolLDL", "CholesterolTotal", "CholesterolTriglycerides")], method = "kendall")
 correlation.mtx.4var
 correlation.mtx.4var<-as.data.frame(correlation.mtx.4var)
@@ -287,6 +287,10 @@ Metric.regular<-data.frame("Recall"=Recall.regular.glm,"Precision"=Precision.reg
 ```
 
 
+
+
+
+
 ### MLR with best subset
 
 ```{r}
@@ -310,8 +314,11 @@ bestSubset_STR<-paste(bestSubset_vars,collapse = ",")
 
 ```{r}
 set.with.BestsubsetVar<-train%>%dplyr::select(Diagnosis,Age,SleepQuality,CholesterolHDL,MMSE,FunctionalAssessment,MemoryComplaints,BehavioralProblems,ADL)
+
 MLR_bestsubset<-glm(Diagnosis~.,data=set.with.BestsubsetVar,family="binomial")
+
 pred.bestsubset<-predict(MLR_bestsubset,newdata = test,type = "response",family="binomial")
+
 class.bestsubset<-ifelse(pred.bestsubset>0.5,1,0)
 table(class.bestsubset,test_y)
 
@@ -608,40 +615,51 @@ for (m in 1:10){
 
 
 
-```{r attempt to parallel gbm}
+```{r attempt to parallel gbm, eval=FALSE, include=FALSE}
 library(caret)
 library(gbm)
 library(foreach)
 library(doParallel)
 
+# Prepare for parallelization
 num_cores <- detectCores() - 1
 registerDoParallel(cores = num_cores)
 
+# Parallelize the outer loop
 set.seed(99325)
 recall.forCI <- foreach(
-  m = 1:100, 
-  .combine = c,  
-  .packages = c("caret", "gbm") 
+  m = 1:10, 
+  .combine = c,  # Combine results into a vector
+  .packages = c("caret", "gbm")  # Libraries to load in each worker
 ) %dopar% {
-  set.seed(99325)
-  
+  # Create folds
   cv.folds <- createFolds(alzh.forCI$Diagnosis, 5)
   
- 
+  # Initialize recall container for this iteration
   recall.contain <- numeric()
   
-  
+  # Inner loop (now sequential within each parallel iteration)
   for (fold in cv.folds){
     train_data <- alzh.forCI[-fold,]
     test_data <- alzh.forCI[fold,]
     
-    model <- gbm(Diagnosis ~ ., data = train_data, distribution = "bernoulli", 
+    model <- gbm(
+      Diagnosis ~ ., 
+      data = train_data, 
+      distribution = "bernoulli", 
       n.trees = 1000, 
       interaction.depth = 4, 
       shrinkage = 0.01
     )
     
-    preds <- predict(model, newdata = test_data, n.trees = 1000, interaction.depth = 4, shrinkage = 0.01, type = "response")
+    preds <- predict(
+      model, 
+      newdata = test_data, 
+      n.trees = 1000, 
+      interaction.depth = 4, 
+      shrinkage = 0.01, 
+      type = "response"
+    )
     
     preds_class <- ifelse(preds > 0.5, 1, 0)
     
@@ -657,7 +675,7 @@ recall.forCI <- foreach(
   return(mean.recall)
 }
 
-
+# Stop the parallel backend
 stopImplicitCluster()
 ```
 
