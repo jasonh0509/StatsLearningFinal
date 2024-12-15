@@ -1,0 +1,33 @@
+```{r eval = FALSE, include = FALSE}
+##second attempt to paralell gbm repeat cv
+alzh.forCI$Diagnosis<-as.factor(alzh.forCI$Diagnosis)
+library(caret)
+library(gbm)
+library(doParallel)
+
+num_cores <- detectCores() - 1
+cl <- makeCluster(num_cores)  
+registerDoParallel(cl)  
+
+train_control.gbm <- trainControl(method = "repeatedcv",
+                              number = 10,
+                              repeats = 3,
+                              verboseIter = TRUE,
+                              allowParallel = TRUE)
+tune.grid<-expand.grid(
+      n.trees = 1000, 
+      interaction.depth = 4, 
+      shrinkage = 0.03,
+      n.minobsinnode=10
+)
+
+set.seed(28256)
+gbm.2ndAtmp<-train(Diagnosis~.,
+                   data=alzh.forCI,
+                   method="gbm",
+                   trControl=train_control.gbm,
+                   tuneGrid=tune.grid,
+                   verbose=FALSE)
+stopCluster(cl)
+registerDoSEQ()
+```

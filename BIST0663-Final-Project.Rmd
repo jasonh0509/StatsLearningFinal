@@ -16,6 +16,16 @@ output:
 options("install.lock"=FALSE)
 ```
 
+```{r}
+###This is a function used to make sure cluster is terminated to avoid "invalid connection" error
+unregister_dopar <- function() {
+    env <- foreach:::.foreachGlobals
+    rm(list=ls(name=env), pos=env)
+}
+
+```
+
+
 
 ```{r}
 library(xfun)
@@ -30,9 +40,6 @@ install.packages("caret")
 install.packages("yardstick")
 ```
 
-```{r}
-#This is a test2222
-```
 
 
 ```{r load packages, include=FALSE}
@@ -63,6 +70,8 @@ library(DataExplorer)
 library(BART)
 library(gbm)
 library(caret)
+library(pROC)
+
 ```
 
 ### Load Datas
@@ -251,18 +260,16 @@ tryglycerides.logistic<-glm(Diagnosis~CholesterolTriglycerides,data=ALZH_for_exp
 
 ```{r}
 ALZH.logistic<-ALZH.gbm%>%select(-c(CholesterolTotal,CholesterolLDL,CholesterolTriglycerides))###set for logistic regression directly derived from ALZH.gbm but removed 3 variables.
+ALZH.logistic$Diagnosis<-as.factor(ALZH.logistic$Diagnosis)
 n <-nrow(ALZH.logistic);n
 
-set.seed(114514)
-draw<-sample(1:n,size = 1934)##1934 is 90% of the data,here is the rows we use fall all trainig and validation sets in the project, all derived from ALZH.gbm
+#set.seed(114514)
+draw<-(1:2149)
+#draw<-sample(1:n,size = 1934)##1934 is 90% of the data,here is the rows we use fall all trainig and validation sets in the project, all derived from ALZH.gbm
 ##This is the ultimate sample data indces!
 train <-ALZH.logistic[draw,]
 train_x<-train%>%dplyr::select(-Diagnosis)
 train_y<-train%>%dplyr::select(Diagnosis)
-
-test <- ALZH.logistic[-draw,]
-test_x<-test%>%dplyr::select(-Diagnosis)
-test_y <-test$Diagnosis
 
 
 x <-model.matrix(Diagnosis~.,data=ALZH.logistic)
@@ -270,22 +277,102 @@ y <- ALZH.logistic$Diagnosis
 ```
 
 
-
 ```{r}
-ALZH_logistic <-glm(Diagnosis~.,data=train,family = binomial)
-summary(ALZH_logistic)
+set.seed(1234)
 
-pred_test<-predict(ALZH_logistic,type='response',newdata = test)
-glm.pred <- ifelse(pred_test > 0.5, 1, 0)
-table(glm.pred, test_y)
-Recall.regular.glm<-sum(glm.pred == 1 & test_y == 1)/sum(test_y == 1);Recall.regular.glm
-Precision.regular.glm<-sum(glm.pred == 1 & test_y == 1)/sum(glm.pred == 1);Precision.regular.glm
-F1Score.regular.glm<-2*Precision.regular.glm*Recall.regular.glm/(Precision.regular.glm+Recall.regular.glm);F1Score.regular.glm 
-Accuracy.regular.glm<-sum(glm.pred == test_y)/length(test_y);Accuracy.regular.glm
+#Create metric containers
+#auc.values <- c()
+#recall.val<-c()
+#precision.val<-c()
+#accuracy.val<-c()
 
-Metric.regular<-data.frame("Recall"=Recall.regular.glm,"Precision"=Precision.regular.glm,"Accuracy"=Accuracy.regular.glm,"F1 score"= F1Score.regular.glm)
+recall.set<-c()
+precision.set<-c()
+accuracy.set<-c()
+auc.set<-c()
+
+
+# Perform repeated cross-validation
+for (r in 1:300) {
+  cat("Iteration:", r, "\n")
+  
+  # Create k-fold indices for this repeat
+  folds <- createFolds(ALZH.logistic$Diagnosis, k = 5)
+  #print(folds)
+  recall.vect<-c()
+  precision.vect<-c()
+  accuracy.vect<-c()
+  auc.vect<-c()
+
+  for (i in seq_along(folds)) {
+    cat(" Fold:", i, "\n")
+    
+    # Get index for training and test sets
+    #print(folds[[i]])
+    test.index <- folds[[i]]
+    train.index <- -test.index
+
+    train.fold <- ALZH.logistic[train.index, ]
+    test.fold <- ALZH.logistic[test.index, ]
+    
+    # Fit the logistic regression model
+    model <- glm(Diagnosis ~ ., data = train.fold, family = binomial)
+    
+    # Get predictions and calculate probabilities on the test set
+    probs <- predict(model, test.fold, type = "response")
+    preds<-ifelse(probs>0.5,1,0)
+    preds <- factor(preds, levels = c("0", "1"))
+    actual<-factor(test.fold$Diagnosis,levels=c("0","1"))
+    ##confusion matrix
+    mtx<-confusionMatrix(preds,actual,positive = "1")
+
+    
+    #get recall and precision and accuracy and auc value
+    recall<-sum(preds == "1" & actual == "1")/sum(actual == "1")
+    #recall2<-mtx$byClass["Sensitivity"]
+    recall.vect<-c(recall.vect,recall)
+    #print(recall.vect)
+    #print(recall)
+    #print(recall2)
+    precision <- mtx$byClass["Pos Pred Value"]
+    precision.vect<-c(precision.vect,precision)
+    
+    accuracy<-mtx$overall["Accuracy"]
+    accuracy.vect<-c(accuracy.vect,accuracy)
+    
+    roc.curve <- roc(test.fold$Diagnosis, probs)
+    auc <- auc(roc.curve)
+    auc.vect<-c(auc.vect,auc)
+    
+    
+  }
+  #print(recall.vect)
+  #print(mean(recall.vect))
+  recall.set<-c(recall.set,mean(recall.vect))
+  precision.set<-c(precision.set,mean(precision.vect))
+  accuracy.set<-c(accuracy.set,mean(accuracy.vect))
+  auc.set<-c(auc.set,mean(auc.vect))
+  
+}
+
 ```
 
+
+```{r}
+mean.recall.final<-round(mean(recall.set),3);mean.recall.final
+CI.recall.final<-round(t.test(recall.set)$conf.int,5);CI.recall.final
+
+mean.precision.final<-round(mean(precision.set),3);mean.precision.final
+CI.precision.final<-round(t.test(precision.set)$conf.int,5);CI.precision.final
+
+mean.accuracy.final<-round(mean(accuracy.set),3); mean.accuracy.final
+CI.accuracy.final<-round(t.test(accuracy.set)$conf.int,5);CI.accuracy.final
+
+mean.auc.final<-round(mean(auc.set),4);mean.auc.final
+CI.auc.final<-round(t.test(auc.set)$conf.int,5);CI.auc.final
+
+
+```
 
 
 
@@ -293,7 +380,7 @@ Metric.regular<-data.frame("Recall"=Recall.regular.glm,"Precision"=Precision.reg
 
 ### MLR with best subset
 
-```{r}
+```{r include=FALSE}
 ALZH_leanning<-ALZH_noID%>%dplyr::select(-DoctorInCharge)
 bestsubset <- regsubsets(Diagnosis~., data = ALZH_leanning)
 bestsubsum<-summary(bestsubset)
@@ -313,21 +400,105 @@ bestSubset_STR<-paste(bestSubset_vars,collapse = ",")
 ### A MLR with best subset
 
 ```{r}
-set.with.BestsubsetVar<-train%>%dplyr::select(Diagnosis,Age,SleepQuality,CholesterolHDL,MMSE,FunctionalAssessment,MemoryComplaints,BehavioralProblems,ADL)
+set.with.BestsubsetVar<-ALZH.logistic%>%dplyr::select(Diagnosis,Age,SleepQuality,CholesterolHDL,MMSE,FunctionalAssessment,MemoryComplaints,BehavioralProblems,ADL)
+```
 
-MLR_bestsubset<-glm(Diagnosis~.,data=set.with.BestsubsetVar,family="binomial")
 
-pred.bestsubset<-predict(MLR_bestsubset,newdata = test,type = "response",family="binomial")
 
-class.bestsubset<-ifelse(pred.bestsubset>0.5,1,0)
-table(class.bestsubset,test_y)
+```{r}
+##Repeated cv MLR bestsubset
+set.seed(1234)
 
-Recall.mlr.bestSub<-sum(class.bestsubset==1&test_y==1)/sum(test_y==1);Recall.mlr.bestSub
-Precision.mlr.bestSub<-sum(class.bestsubset == 1 & test_y == 1)/sum(class.bestsubset == 1);Precision.mlr.bestSub
-F1Score.mlr.bestSub<-2*Precision.mlr.bestSub*Recall.mlr.bestSub/(Precision.mlr.bestSub+Recall.mlr.bestSub);F1Score.mlr.bestSub
-Accuracy.mlr.bestSub<-sum(class.bestsubset == test_y)/length(test_y);Accuracy.mlr.bestSub
+#Create metric containers
+#auc.values <- c()
+#recall.val<-c()
+#precision.val<-c()
+#accuracy.val<-c()
 
-Metric.mlr.bestSub<-data.frame("Recall"= Recall.mlr.bestSub,"Precision"=Precision.mlr.bestSub,"F1 score"=F1Score.mlr.bestSub,"Accuracy"=Accuracy.mlr.bestSub)
+recall.set.sb<-c()
+precision.set.sb<-c()
+accuracy.set.sb<-c()
+auc.set.sb<-c()
+
+
+# Perform repeated cross-validation
+for (r in 1:300) {
+  cat("Iteration:", r, "\n")
+  
+  # Create k-fold indices for this repeat
+  folds <- createFolds(set.with.BestsubsetVar$Diagnosis, k = 5)
+  #print(folds)
+  recall.vect.sb<-c()
+  precision.vect.sb<-c()
+  accuracy.vect.sb<-c()
+  auc.vect.sb<-c()
+
+  for (i in seq_along(folds)) {
+    
+    # Get index for training and test sets
+    #print(folds[[i]])
+    test.index <- folds[[i]]
+    train.index <- -test.index
+
+    train.fold <- set.with.BestsubsetVar[train.index, ]
+    test.fold <- set.with.BestsubsetVar[test.index, ]
+    
+    # Fit the logistic regression model
+    model <- glm(Diagnosis ~ ., data = train.fold, family = binomial)
+    
+    # Get predictions and calculate probabilities on the test set
+    probs <- predict(model, test.fold, type = "response")
+    preds<-ifelse(probs>0.5,1,0)
+    preds <- factor(preds, levels = c("0", "1"))
+    actual<-factor(test.fold$Diagnosis,levels=c("0","1"))
+    ##confusion matrix
+    mtx<-confusionMatrix(preds,actual,positive = "1")
+
+    
+    #get recall and precision and accuracy and auc value
+    recall<-sum(preds == "1" & actual == "1")/sum(actual == "1")
+    #recall2<-mtx$byClass["Sensitivity"]
+    recall.vect.sb<-c(recall.vect.sb,recall)
+    #print(recall.vect)
+    #print(recall)
+    #print(recall2)
+    precision <- mtx$byClass["Pos Pred Value"]
+    precision.vect.sb<-c(precision.vect.sb,precision)
+    #print(precision.vect)
+    
+    accuracy<-mtx$overall["Accuracy"]
+    accuracy.vect.sb<-c(accuracy.vect.sb,accuracy)
+    
+    #test.fold$Diagnosis <- as.numeric(as.character(test.fold$Diagnosis))
+    roc.curve <- roc(test.fold$Diagnosis, probs)
+    auc <- auc(roc.curve)
+    auc.vect.sb<-c(auc.vect.sb,auc)
+    
+    
+  }
+  #print(recall.vect)
+  #print(mean(recall.vect))
+  recall.set.sb<-c(recall.set.sb,mean(recall.vect.sb))
+  precision.set.sb<-c(precision.set.sb,mean(precision.vect.sb))
+  accuracy.set.sb<-c(accuracy.set.sb,mean(accuracy.vect.sb))
+  auc.set.sb<-c(auc.set.sb,mean(auc.vect.sb))
+  
+}
+
+```
+
+```{r}
+mean.recallBestSub.final<-round(mean(recall.set.sb),3);mean.recallBestSub.final
+CI.recallSb.final<-round(t.test(recall.set.sb)$conf.int,5);CI.recallSb.final
+
+mean.precisionBestSub.final<-round(mean(precision.set.sb),3);mean.precisionBestSub.final
+CI.precisionSb.final<-round(t.test(precision.set.sb)$conf.int,5);CI.precisionSb.final
+
+mean.accuracySb.final<-round(mean(accuracy.set.sb),3); mean.accuracySb.final
+CI.accuracySb.final<-round(t.test(accuracy.set.sb)$conf.int,5);CI.accuracySb.final
+
+mean.aucSb.final<-round(mean(auc.set.sb),3);mean.aucSb.final
+CI.aucSb.final<-round(t.test(auc.set.sb)$conf.int,5);CI.aucSb.final
 ```
 
 
@@ -351,17 +522,175 @@ best_lambda <- cv.out$lambda.min;best_lambda
 ```{r}
 train_y<-as.matrix(train_y)
 lasso.final<-glmnet(train_x_lasso,train_y.lasso$Diagnosis,alpha = 1,lambda = best_lambda,family = "binomial")
-lasso.pred <- predict(lasso.final, s = best_lambda, newx = as.matrix(test_x))
-lasso.pred.class<-ifelse(lasso.pred > 0.5,1,0)
-table(prediction=lasso.pred.class,actual=test_y)
+
+```
+
+
+
+```{r eval=FALSE, include=FALSE}
+#repeated CV for Lasso
+
+#Create metric containers
+auc.values.lasso <- c()
+recall.val.lasso<-c()
+precision.val.lasso<-c()
+accuracy.val.lasso<-c()
+
+auc.lasso.vase<-c()
+recall.lasso.vase<-c()
+precision.lasso.vase<-c()
+accuracy.lasso.vase<-c()
+
+# Perform repeated cross-validation
+for (r in 1:50) {
+  cat("Iteration:", r, "\n")
+  
+  # Create k-fold indices for this repeat
+  folds <- createFolds(ALZH.logistic$Diagnosis, k = 10)
+  
+  for (i in seq_along(folds)) {
+    cat(" Fold:", i, "\n")
+    
+    # Get index for training and test sets
+    test.index <- folds[[i]]
+    train.index <- -test_indices
+
+    train.fold <- ALZH.logistic[train.index, ]
+    test.fold <- ALZH.logistic[test.index, ]
+    
+    # Fit the logistic regression model
+    model <- glm(Diagnosis ~ ., data = train.fold, family = binomial)
+    
+    # Get predictions and calculate probabilities on the test set
+    probs <- predict(model, test.fold, type = "response")
+    preds<-ifelse(probs>0.5,1,0)
+    preds <- factor(preds, levels = c("0", "1"))
+    actual<-factor(test.fold$Diagnosis,levels=c("0","1"))
+    ##confusion matrix
+    mtx<-confusionMatrix(preds,actual)
+
+    
+    #get recall and precision and accuracy and auc value
+    recall<-sum(preds == 1 & test.fold$Diagnosis == 1)/sum(test.fold$Diagnosis == 1)
+    precision <- mtx$byClass["Precision"]
+    accuracy<-mtx$overall["Accuracy"]
+    roc.curve <- roc(test.fold$Diagnosis, probs)
+    auc <- auc(roc.curve)
+    
+    # Store the metric value
+    auc.values.lasso <- c(auc.values.lasso, auc)
+    recall.val.lasso<-c(recall.val.lasso,recall)
+    precision.val.lasso<-c(precision.val.lasso,precision)
+    accuracy.val.lasso<-c(accuracy.val.lasso,accuracy)
+    
+    mean.auc.lasso<-mean(auc.values.lasso)
+    mean.recall.lasso<-mean(recall.val.lasso)
+    mean.precision.lasso<-mean(precision.val.lasso)
+    mean.accuracy.lasso<-mean(accuracy.val.lasso)
+    
+    auc.lasso.vase<-c(auc.lasso.vase,mean.auc.lasso)
+    recall.lasso.vase<-c(recall.lasso.vase,mean.recall.lasso)
+    precision.lasso.vase<-c(precision.lasso.vase,mean.precision.lasso)
+    accuracy.lasso.vase<-c(accuracy.lasso.vase,mean.accuracy.lasso)
+  }
+  
+}
+
+```
+
+
+```{r message=FALSE, warning=FALSE}
+set.seed(1234)
+
+#Create metric containers
+#auc.values <- c()
+#recall.val<-c()
+#precision.val<-c()
+#accuracy.val<-c()
+
+recall.set.lasso<-c()
+precision.set.lasso<-c()
+accuracy.set.lasso<-c()
+auc.set.lasso<-c()
+
+
+# Perform repeated cross-validation
+for (r in 1:300) {
+  cat("Iteration:", r, "\n")
+  
+  # Create k-fold indices for this repeat
+  folds <- createFolds(ALZH.logistic$Diagnosis, k = 5)
+  #print(folds)
+  recall.vect.lasso<-c()
+  precision.vect.lasso<-c()
+  accuracy.vect.lasso<-c()
+  auc.vect.lasso<-c()
+
+  for (i in seq_along(folds)) {
+    cat(" Fold:", i, "\n")
+    
+    # Get index for training and test sets
+    #print(folds[[i]])
+    test.index <- folds[[i]]
+    train.index <- -test.index
+
+    train.fold <- ALZH.logistic[train.index, ]
+    test.fold <- ALZH.logistic[test.index, ]
+    
+    # Fit the logistic regression model
+    model <- glm(Diagnosis ~ ., data = train.fold, family = binomial)
+    
+    # Get predictions and calculate probabilities on the test set
+    probs <- predict(model, test.fold, type = "response")
+    preds<-ifelse(probs>0.5,1,0)
+    preds <- factor(preds, levels = c("0", "1"))
+    actual<-factor(test.fold$Diagnosis,levels=c("0","1"))
+    ##confusion matrix
+    mtx<-confusionMatrix(preds,actual,positive = "1")
+
+    
+    #get recall and precision and accuracy and auc value
+    recall<-sum(preds == "1" & actual == "1")/sum(actual == "1")
+    #recall2<-mtx$byClass["Sensitivity"]
+    recall.vect.lasso<-c(recall.vect.lasso,recall)
+    #print(recall.vect)
+    #print(recall)
+    #print(recall2)
+    precision <- mtx$byClass["Pos Pred Value"]
+    precision.vect.lasso<-c(precision.vect.lasso,precision)
+    
+    accuracy<-mtx$overall["Accuracy"]
+    accuracy.vect.lasso<-c(accuracy.vect.lasso,accuracy)
+    
+    roc.curve <- roc(test.fold$Diagnosis, probs)
+    auc <- auc(roc.curve)
+    auc.vect.lasso<-c(auc.vect.lasso,auc)
+    
+    
+  }
+  #print(recall.vect)
+  #print(mean(recall.vect))
+  recall.set.lasso<-c(recall.set.lasso,mean(recall.vect.lasso))
+  precision.set.lasso<-c(precision.set.lasso,mean(precision.vect.lasso))
+  accuracy.set.lasso<-c(accuracy.set.lasso,mean(accuracy.vect.lasso))
+  auc.set.lasso<-c(auc.set.lasso,mean(auc.vect.lasso))
+  
+}
+
 ```
 
 ```{r}
-Recall.lasso<-sum(lasso.pred.class == 1 & test_y == 1)/sum(test_y == 1);Recall.lasso
-Precision.lasso<-sum(lasso.pred.class == 1 & test_y == 1)/sum(lasso.pred.class == 1);Precision.lasso
-F1Score.lasso<-2*Precision.lasso*Recall.lasso/(Precision.lasso+Recall.lasso);F1Score.lasso
-Accuracy.lasso<-sum(lasso.pred.class == test_y)/length(test_y);Accuracy.lasso
-Metric.lasso<-data.frame("Recall"=Recall.lasso,"Precision"=Precision.lasso,"Accuracy"=Accuracy.lasso,"F1 score"=F1Score.lasso)
+mean.recallLasso.final<-round(mean(recall.set.lasso),4);mean.recallLasso.final
+CI.recallLasso.final<-round(t.test(recall.set.lasso)$conf.int,5);CI.recallLasso.final
+
+mean.precisionLasso.final<-round(mean(precision.set.lasso),4);mean.precisionLasso.final
+CI.precisionLasso.final<-round(t.test(precision.set.lasso)$conf.int,5);CI.precisionLasso.final
+
+mean.accuracyLasso.final<-round(mean(accuracy.set.lasso),4); mean.accuracyLasso.final
+CI.accuracyLasso.final<-round(t.test(accuracy.set.lasso)$conf.int,5);CI.accuracyLasso.final
+
+mean.aucLasso.final<-round(mean(auc.set.lasso),4);mean.aucLasso.final
+CI.aucLasso.final<-round(t.test(auc.set.lasso)$conf.int,5);CI.aucLasso.final
 ```
 
 
@@ -466,16 +795,113 @@ Perf.Metric.knn$k[which.max(Perf.Metric.knn$Recall)]
 Perf.Metric.knn
 ```
 
-```{r}
-knn.final<-knn(train = alzh_secondKNN%>%select(-Diagnosis),test = alzh_secondKNN.test%>%select(-Diagnosis),cl = alzh_secondKNN$Diagnosis,k=1)
-table(knn.final,alzh_secondKNN.test$Diagnosis)
+```{r eval=FALSE, include=FALSE}
+knn.final<-knn(train = alzh_secondKNN%>%select(-Diagnosis),test = alzh_secondKNN%>%select(-Diagnosis),cl = alzh_secondKNN$Diagnosis,k=1)
+table(knn.final,alzh_secondKNN$Diagnosis)
 Recall.knn.final<-sum(knn.final == 1 & alzh_secondKNN.test$Diagnosis == 1)/sum(alzh_secondKNN.test$Diagnosis == 1);Recall.knn.final
 Precision.knn.final<-sum(knn.final == 1 & alzh_secondKNN.test$Diagnosis == 1)/sum(knn.final == 1);Precision.knn.final
 F1Score.knn.final<-2*Precision.knn.final*Recall.knn.final/(Precision.knn.final+Recall.knn.final);F1Score.knn.final
 Accuracy.knn.final<-sum(knn.final == alzh_secondKNN.test$Diagnosis)/length(alzh_secondKNN.test$Diagnosis);Accuracy.knn.final
 ```
+
+
+
+
+
+
+```{r message=FALSE, warning=FALSE}
+set.seed(1234)
+
+#Create metric containers
+#auc.values <- c()
+#recall.val<-c()
+#precision.val<-c()
+#accuracy.val<-c()
+
+recall.set.knn<-c()
+precision.set.knn<-c()
+accuracy.set.knn<-c()
+auc.set.knn<-c()
+
+
+# Perform repeated cross-validation
+for (r in 1:300) {
+  #cat("Iteration:", r, "\n")
+  
+  # Create k-fold indices for this repeat
+  folds <- createFolds(alzh_secondKNN$Diagnosis, k = 5)
+  #print(folds)
+  recall.vect.knn<-c()
+  precision.vect.knn<-c()
+  accuracy.vect.knn<-c()
+  auc.vect.knn<-c()
+
+  for (i in seq_along(folds)) {
+    #cat(" Fold:", i, "\n")
+    
+    # Get index for training and test sets
+    #print(folds[[i]])
+    test.index <- folds[[i]]
+    train.index <- -test.index
+
+    train.fold <- alzh_secondKNN[train.index, ]
+    test.fold <- alzh_secondKNN[test.index, ]
+    
+    # Fit the logistic regression model
+    model <- knn(train = train.fold%>%select(-Diagnosis),test = test.fold%>%select(-Diagnosis),cl = train.fold$Diagnosis,k=1)
+    
+    # Get predictions and calculate probabilities on the test set
+    #probs <- predict(model, test.fold, type = "response")
+    #preds<-ifelse(probs>0.5,1,0)
+    #preds <- factor(preds, levels = c("0", "1"))
+    actual<-factor(test.fold$Diagnosis,levels=c("0","1"))
+    ##confusion matrix
+    mtx<-confusionMatrix(model,actual,positive = "1")
+
+    
+    #get recall and precision and accuracy and auc value
+    recall<-sum(model == "1" & actual == "1")/sum(actual == "1")
+    #recall2<-mtx$byClass["Sensitivity"]
+    recall.vect.knn<-c(recall.vect.knn,recall)
+    #print(recall.vect)
+    #print(recall)
+    #print(recall2)
+    precision <- mtx$byClass["Pos Pred Value"]
+    precision.vect.knn<-c(precision.vect.knn,precision)
+    
+    accuracy<-mtx$overall["Accuracy"]
+    accuracy.vect.knn<-c(accuracy.vect.knn,accuracy)
+    
+    roc.curve <- roc(test.fold$Diagnosis, as.numeric(model))
+    auc <- auc(roc.curve)
+    auc.vect.knn<-c(auc.vect.knn,auc)
+    
+    
+  }
+  #print(recall.vect)
+  #print(mean(recall.vect))
+  recall.set.knn<-c(recall.set.knn,mean(recall.vect.knn))
+  precision.set.knn<-c(precision.set.knn,mean(precision.vect.knn))
+  accuracy.set.knn<-c(accuracy.set.knn,mean(accuracy.vect.knn))
+  auc.set.knn<-c(auc.set.knn,mean(auc.vect.knn))
+  
+}
+
+```
+
 ```{r}
-Metric.knn<-data.frame("Recall"= Recall.knn.final,"Precision"=Precision.knn.final,"Accuracy"=Accuracy.knn.final,"F1 score"=F1Score.knn.final)
+mean.recallknn.final<-round(mean(recall.set.knn),4);mean.recallknn.final
+CI.recallknn.final<-round(t.test(recall.set.knn)$conf.int,5);CI.recallknn.final
+
+mean.precisionknn.final<-round(mean(precision.set.knn),4);mean.precisionknn.final
+CI.precisionknn.final<-round(t.test(precision.set.knn)$conf.int,5);CI.precisionknn.final
+
+mean.accuracyknn.final<-round(mean(accuracy.set.knn),4); mean.accuracyknn.final
+CI.accuracyknn.final<-round(t.test(accuracy.set.knn)$conf.int,5);CI.accuracyknn.final
+
+mean.aucknn.final<-round(mean(auc.set.knn),4);mean.aucknn.final
+CI.aucknn.final<-round(t.test(auc.set.knn)$conf.int,5);CI.aucknn.final
+
 ```
 
 
@@ -484,15 +910,9 @@ Metric.knn<-data.frame("Recall"= Recall.knn.final,"Precision"=Precision.knn.fina
 ```{r}
 set.seed(12345)
 ALZH.boosting<-ALZH.gbm%>%select(-c(CholesterolTotal,CholesterolLDL,CholesterolTriglycerides))
-boosting.try <- gbm(Diagnosis ~ ., data = ALZH.boosting[draw,], distribution = "bernoulli", n.trees = 5000, interaction.depth = 4, shrinkage = 0.01)
-
 ```
 
-```{r}
-yhat.gbm<-predict(boosting.try,newdata = ALZH.gbm[-draw,],n.trees = 5000,interaction.depth = 4,shrinkage = 0.01,type = "response")
-pred_gbm_class <- ifelse(yhat.gbm > 0.5, 1, 0)
-knitr::kable(table("Prediction"=pred_gbm_class,"Actual"=ALZH.gbm[-draw,]$Diagnosis))
-```
+
 
 
 ```{r}
@@ -500,7 +920,7 @@ set.seed(12345)
 lambda_val <- seq(0.01, 0.05, by = 0.01)
 result_container <- data.frame(Lambda = lambda_val, Recall = rep(0, length(lambda_val)), Precision = rep(0, length(lambda_val)), F1_Score = rep(0, length(lambda_val)),Accuracy=rep(0,length(lambda_val)))
 ALZH.boosting.forTunine<-ALZH.gbm[draw,]
-ALZH.boosting.realTest<-ALZH.gbm[-draw,]
+#ALZH.boosting.realTest<-ALZH.gbm[-draw,]
 
 ```
 
@@ -509,8 +929,39 @@ ALZH.boosting.realTest<-ALZH.gbm[-draw,]
 
 ```{r}
 ALZH.gbm.forTuning<-ALZH.gbm[draw,]
-ALZH.gbm.realTest<-ALZH.gbm[-draw,]
+#ALZH.gbm.realTest<-ALZH.gbm[-draw,]
 ```
+
+
+```{r eval=FALSE, include=FALSE}
+library(parallel)
+library(doParallel)
+#add an RFE
+rfe.featureGBM<-ALZH.gbm.forTuning[draw,-which(names(ALZH.gbm.forTuning) == "Diagnosis")]
+rfe.featureGBM<-rfe.featureGBM%>%dplyr::select(-CholesterolTotal,-CholesterolHDL,-CholesterolLDL,-CholesterolTriglycerides)
+RFE.responseGBM<-ALZH.gbm.forTuning[draw,"Diagnosis"]
+RFE.responseGBM<-as.factor(RFE.responseGBM)
+
+
+num_cores <- detectCores() - 1  # Use one less than the total number of cores
+cl2 <- makeCluster(num_cores)    # Create a cluster
+registerDoParallel(cl2) 
+
+set.seed(1124)
+control.gbm<-rfeControl(functions = rfFuncs, method = "cv", number = 10,allowParallel = TRUE)
+RFE.result.gbm<-rfe(rfe.featureGBM,RFE.responseGBM, sizes =c(5,10,15) , rfeControl = control.gbm)
+print(RFE.result.gbm)
+
+stopCluster(cl2)
+
+```
+
+
+```{r include=FALSE}
+closeAllConnections()
+unregister_dopar()
+```
+
 
 
 
@@ -519,8 +970,8 @@ set.seed(12345)
 lambda_val <- seq(0.01, 0.03, by = 0.01)
 ntree_val <- c(1000, 2000, 3000)
 
-ALZH.gbm.forGrid<-ALZH.gbm.forTuning%>%select(-c(CholesterolTotal,CholesterolLDL,CholesterolTriglycerides))
-ALZH.gbm.forGrid$Diagnosis <- factor(ALZH.gbm.forGrid$Diagnosis, levels = c(0, 1), labels = c("No", "Yes"))##This ensure format align with training requirement
+ALZH.gbm.forGrid<-ALZH.gbm.forTuning%>%select(c(FunctionalAssessment, ADL, MMSE, MemoryComplaints, BehavioralProblems,CholesterolHDL,Diagnosis))
+ALZH.gbm.forGrid$Diagnosis <- factor(ALZH.gbm.forGrid$Diagnosis, levels = c(0, 1), labels = c("No", "Yes"))
 ALZH.gbm.realTest<-ALZH.gbm[-draw,]%>%select(-c(CholesterolTotal,CholesterolLDL,CholesterolTriglycerides))
 
 
@@ -540,7 +991,7 @@ Boosting_alzh_grid <- train(
   tuneGrid = grid, 
   distribution = "bernoulli",
   metric = "ROC",
-  verbose=TRUE,
+  verbose=FALSE,
   train.fraction = 0.9
 )
 
@@ -576,17 +1027,28 @@ Metric.gbm<-data.frame("Recall"= Recall.grid.gbm,"Precision"=Precision.grid.gbm,
 
 
 
-```{r chunk of gbm without parallel}
+```{r chunk of gbm without parallel, eval=FALSE, include=FALSE}
+library(pROC)
 
-alzh.forCI<-ALZH.gbm
 #alzh.forCI$Diagnosis<-as.factor(alzh.forCI$Diagnosis)
 set.seed(99325)
 recall.forCI<-numeric()
+precision.forCI<-numeric()
+accuracy.forCI<-numeric()
+roc.forCI<-numeric()
+
+mean.recallCI<-numeric()
+mean.precisionCI<-numeric()
+mean.accuracyCI<-numeric()
+mean.rocCI<-numeric()
 
 for (m in 1:10){
   print(m)
   cv.folds<-createFolds(alzh.forCI$Diagnosis,5)
   recall.contain<-numeric()
+  precision.contain<-numeric()
+  accuracy.contain<-numeric()
+  #roc.contain<-numeric()
 
   for (fold in cv.folds){
     train_data<-alzh.forCI[-fold,]
@@ -603,11 +1065,27 @@ for (m in 1:10){
     confusion<-confusionMatrix(preds_class,test_data$Diagnosis)
     
     recall.contain<-c(recall.contain,confusion$byClass["Sensitivity"])
-    mean.recall<-mean(recall.contain)
+    precision.contain<-c(precision.contain,confusion$byClass["Precision"])
+    accuracy.contain<-c(accuracy.contain,confusion$byClass["Accuracy"])
+    rocCurve<-roc(test_data$Diagnosis,preds)
+    auc.contain<-pROC::auc(rocCurve)
+    
+    #mean.recall<-mean(recall.contain)
       
   }
-  mean.recall<-mean(recall.contain)
-  recall.forCI<-c(recall.forCI,mean.recall)
+  mean.recallCI<-mean(recall.contain)
+  recall.forCI<-c(recall.forCI,mean.recallCI)
+  
+  mean.precisionCI<-mean(precision.contain)
+  precision.forCI<-c(precision.forCI,mean.precisionCI)
+  
+  mean.accuracyCI<-mean(accuracy.contain)
+  accuracy.forCI<-c(accuracy.forCI,mean.accuracyCI)
+  
+  mean.rocCI<-mean(auc.contain)
+  roc.forCI<-c(roc.forCI,mean.rocCI)
+  
+  
 
 }
 ```
@@ -620,6 +1098,10 @@ library(caret)
 library(gbm)
 library(foreach)
 library(doParallel)
+library(pROC)
+
+
+
 
 # Prepare for parallelization
 num_cores <- detectCores() - 1
@@ -637,6 +1119,15 @@ recall.forCI <- foreach(
   
   # Initialize recall container for this iteration
   recall.contain <- numeric()
+  auc.values.gbm <- c()
+  #recall.val.gbm<-c()
+  precision.val.gbm<-c()
+  accuracy.val.gbm<-c()
+
+  auc.gbm.vase<-c()
+  recall.gbm.vase<-c()
+  precision.gbm.vase<-c()
+  accuracy.gbm.vase<-c()
   
   # Inner loop (now sequential within each parallel iteration)
   for (fold in cv.folds){
@@ -647,17 +1138,17 @@ recall.forCI <- foreach(
       Diagnosis ~ ., 
       data = train_data, 
       distribution = "bernoulli", 
-      n.trees = 1000, 
+      n.trees = 2000, 
       interaction.depth = 4, 
-      shrinkage = 0.01
+      shrinkage = 0.03
     )
     
     preds <- predict(
       model, 
       newdata = test_data, 
-      n.trees = 1000, 
+      n.trees = 2000, 
       interaction.depth = 4, 
-      shrinkage = 0.01, 
+      shrinkage = 0.03, 
       type = "response"
     )
     
@@ -668,16 +1159,146 @@ recall.forCI <- foreach(
     
     confusion <- confusionMatrix(preds_class, test_data$Diagnosis)
     
-    recall.contain <- c(recall.contain, confusion$byClass["Sensitivity"])
-    mean.recall <- mean(recall.contain)
+    #get recall and precision and accuracy and auc value
+    recall<-sum(preds == 1 & test_data$Diagnosis == 1)/sum(test_data$Diagnosis == 1)
+    precision <- confusion$byClass["Precision"]
+    accuracy<-confusion$overall["Accuracy"]
+    roc.curve <- pROC::roc(test_data$Diagnosis, preds)
+    auc <- pROC::auc(roc.curve)
+    
+    # Store the metric value
+    auc.values.gbm <- c(auc.values.gbm, auc)
+    recall.val.gbm<-c(recall.val.gbm,recall)
+    precision.val.gbm<-c(precision.val.gbm,precision)
+    accuracy.val.gbm<-c(accuracy.val.gbm,accuracy)
+    
+    mean.auc.gbm<-mean(auc.values.gbm)
+    mean.recall.gbm<-mean(recall.val.gbm)
+    mean.precision.gbm<-mean(precision.val.gbm)
+    mean.accuracy.gbm<-mean(accuracy.val.gbm)
+    
+    auc.gbm.vase<-c(auc.gbm.vase,mean.auc.gbm)
+    recall.gbm.vase<-c(recall.gbm.vase,mean.recall.gbm)
+    precision.gbm.vase<-c(precision.gbm.vase,mean.precision.gbm)
+    accuracy.gbm.vase<-c(accuracy.gbm.vase,mean.accuracy.gbm)
   }
   
-  return(mean.recall)
+  #return(mean.recall)
 }
 
 # Stop the parallel backend
 stopImplicitCluster()
+unregister_dopar()
 ```
+
+
+
+
+
+
+```{r true gbm cv, message=FALSE, warning=FALSE}
+alzh.forCI<-ALZH.gbm.forGrid
+alzh.forCI <- alzh.forCI %>%
+  mutate(Diagnosis = ifelse(Diagnosis == "Yes", 1, 0))
+set.seed(1234)
+
+#Create metric containers
+#auc.values <- c()
+#recall.val<-c()
+#precision.val<-c()
+#accuracy.val<-c()
+
+recall.set.gbm<-c()
+precision.set.gbm<-c()
+accuracy.set.gbm<-c()
+auc.set.gbm<-c()
+
+
+# Perform repeated cross-validation
+for (r in 1:300) {
+  cat("Iteration:", r, "\n")
+  
+  # Create k-fold indices for this repeat
+  folds <- createFolds(alzh.forCI$Diagnosis, k = 5)
+  #print(folds)
+  recall.vect.gbm<-c()
+  precision.vect.gbm<-c()
+  accuracy.vect.gbm<-c()
+  auc.vect.gbm<-c()
+
+  for (i in seq_along(folds)) {
+    cat(" Fold:", i, "\n")
+    
+    # Get index for training and test sets
+    #print(folds[[i]])
+    test.index <- folds[[i]]
+    train.index <- -test.index
+
+    train.fold <- alzh.forCI[train.index, ]
+    test.fold <- alzh.forCI[test.index, ]
+    
+    # Fit the logistic regression model
+    model <- gbm(Diagnosis~.,data=train.fold,distribution="bernoulli",n.trees=1000,interaction.depth=4,shrinkage=0.01)
+    
+    # Get predictions and calculate probabilities on the test set
+    probs <- predict(model, test.fold, type = "response")
+    preds<-ifelse(probs>0.5,1,0)
+    preds <- factor(preds, levels = c("0", "1"))
+    actual<-factor(test.fold$Diagnosis,levels=c("0","1"))
+    ##confusion matrix
+    mtx<-confusionMatrix(preds,actual,positive = "1")
+
+    
+    #get recall and precision and accuracy and auc value
+    recall<-sum(preds == "1" & actual == "1")/sum(actual == "1")
+    #recall2<-mtx$byClass["Sensitivity"]
+    recall.vect.gbm<-c(recall.vect.gbm,recall)
+    #print(recall.vect)
+    #print(recall)
+    #print(recall2)
+    precision <- mtx$byClass["Pos Pred Value"]
+    precision.vect.gbm<-c(precision.vect.gbm,precision)
+    
+    accuracy<-mtx$overall["Accuracy"]
+    accuracy.vect.gbm<-c(accuracy.vect.gbm,accuracy)
+    
+    roc.curve <- roc(test.fold$Diagnosis, probs)
+    auc <- auc(roc.curve)
+    auc.vect.gbm<-c(auc.vect.gbm,auc)
+    
+    
+  }
+  #print(recall.vect)
+  #print(mean(recall.vect))
+  recall.set.gbm<-c(recall.set.gbm,mean(recall.vect.gbm))
+  precision.set.gbm<-c(precision.set.gbm,mean(precision.vect.gbm))
+  accuracy.set.gbm<-c(accuracy.set.gbm,mean(accuracy.vect.gbm))
+  auc.set.gbm<-c(auc.set.gbm,mean(auc.vect.gbm))
+  
+}
+
+```
+
+
+```{r}
+mean.recallgbm.final<-round(mean(recall.set.gbm),4);mean.recallgbm.final
+CI.recallgbm.final<-round(t.test(recall.set.gbm)$conf.int,5);CI.recallgbm.final
+
+mean.precisiongbm.final<-round(mean(precision.set.gbm),4);mean.precisiongbm.final
+CI.precisiongbm.final<-round(t.test(precision.set.gbm)$conf.int,5);CI.precisiongbm.final
+
+mean.accuracygbm.final<-round(mean(accuracy.set.gbm),4); mean.accuracygbm.final
+CI.accuracygbm.final<-round(t.test(accuracy.set.gbm)$conf.int,5);CI.accuracygbm.final
+
+mean.aucgbm.final<-round(mean(auc.set.gbm),4);mean.aucgbm.final
+CI.aucgbm.final<-round(t.test(auc.set.gbm)$conf.int,5);CI.aucgbm.final
+```
+
+```{r}
+Metric.gbm<-c("Recall"=mean.recallgbm.final,"Precision"=mean.precisiongbm.final,"Accuracy"=mean.accuracygbm.final,"AUC"=mean.aucgbm.final)
+CI.gbm<-c("Recall CI"="(0.9169,0.9175)","Precision CI"="(0.9464 0.94693)","Accuracy CI"="()","AUC CI"="()")
+```
+
 
 
 ```{r}
